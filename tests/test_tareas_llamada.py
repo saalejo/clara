@@ -75,6 +75,44 @@ class TestElPrompt:
         texto = _prompt_de_llamada(RuntimeConfig(), None)
         assert texto.endswith(PROMPT_LLAMADA)
 
+    def test_una_entrante_identificada_saluda_por_su_nombre(self) -> None:
+        from voice_agent_core.telefonia import EstadoLlamada, Llamada
+
+        llamada = Llamada(
+            id="voicecall01",
+            estado=EstadoLlamada.EN_CURSO,
+            numero="3001234567",
+            nombre_agenda="Nora Pérez",
+            entrante=True,
+        )
+        texto = _prompt_de_llamada(RuntimeConfig(), None, llamada)
+        assert "«Nora Pérez»" in texto
+        assert "3001234567" in texto
+        assert "confirma" in texto  # la identidad es pista, no verificación
+
+    def test_sin_nombre_de_agenda_no_se_inventa_identidad(self) -> None:
+        from voice_agent_core.telefonia import EstadoLlamada, Llamada
+
+        llamada = Llamada(
+            id="voicecall01", estado=EstadoLlamada.EN_CURSO, numero="300", entrante=True
+        )
+        texto = _prompt_de_llamada(RuntimeConfig(), None, llamada)
+        assert texto.endswith(PROMPT_LLAMADA)
+
+    def test_una_mision_ignora_la_identidad_de_agenda(self) -> None:
+        from voice_agent_core.telefonia import EstadoLlamada, Llamada
+
+        mision = MisionPendiente(tarea=tarea_llamada(), id_llamada="voicecall01")
+        llamada = Llamada(
+            id="voicecall01",
+            estado=EstadoLlamada.EN_CURSO,
+            numero="300",
+            nombre_agenda="Otro Nombre",
+            entrante=False,
+        )
+        texto = _prompt_de_llamada(RuntimeConfig(), mision, llamada)
+        assert "Otro Nombre" not in texto  # la tarea ya trae el contacto
+
     def test_una_mision_sustituye_el_guion_de_entrante(self) -> None:
         mision = MisionPendiente(tarea=tarea_llamada(), id_llamada="voicecall01")
         texto = _prompt_de_llamada(RuntimeConfig(), mision)

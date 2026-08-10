@@ -209,8 +209,8 @@ def instruccion_mision_llamada(tarea: TareaProgramada) -> str:
     quien = tarea.contacto_nombre or tarea.contacto_numero
     texto = (
         f"\n\nEsta llamada la has hecho TÚ: acabas de llamar a {quien} en nombre "
-        "de la casa. Preséntate como el asistente y explica enseguida por qué "
-        f"llamas. Tu encargo (id de tarea: {tarea.id}): {tarea.mision}\n"
+        "del equipo de seguimiento postoperatorio. Preséntate y explica "
+        f"enseguida por qué llamas. Tu encargo (id de tarea: {tarea.id}): {tarea.mision}\n"
         "Sé breve, es una llamada. Cuando el encargo esté cumplido, despídete "
         "con claridad."
     )

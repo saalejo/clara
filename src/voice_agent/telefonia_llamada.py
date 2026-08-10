@@ -54,6 +54,7 @@ from voice_agent.telefonia_codec import FRECUENCIA_PIPELINE
 from voice_agent.tools import herramientas_activas
 from voice_agent_core.config import Settings
 from voice_agent_core.runtime import RuntimeConfig
+from voice_agent_core.telefonia import Llamada
 
 #: Lo que se le añade al prompt del sistema durante una llamada. Sustituye al
 #: párrafo de telefonía de la sala: aquí el agente ES la llamada y las
@@ -79,16 +80,45 @@ Estás en una llamada telefónica: quien te habla está al otro lado del
 teléfono, no en la habitación. No prometas acciones que no puedas hacer desde
 aquí."""
 
+#: Se añade a una llamada ENTRANTE cuando la agenda del móvil identifica al
+#: número. La identidad es una pista, no una verificación: puede contestar un
+#: familiar desde el teléfono del paciente, y los nombres de agenda a veces
+#: son apodos — por eso se ordena confirmar, no asumir.
+PROMPT_IDENTIDAD_AGENDA = """
 
-def _prompt_de_llamada(runtime: RuntimeConfig, mision: MisionPendiente | None) -> str:
+El teléfono identifica a quien llama: en la agenda figura como «{nombre}»
+(número {numero}). Salúdalo por ese nombre y confirma enseguida que hablas
+con esa persona — puede ser un familiar llamando desde su teléfono. Si el
+nombre de la agenda no parece el de una persona, pregunta el nombre como
+siempre. Una vez confirmado, no vuelvas a pedirle el nombre."""
+
+
+def _prompt_de_llamada(
+    runtime: RuntimeConfig,
+    mision: MisionPendiente | None,
+    llamada: Llamada | None = None,
+) -> str:
     """Compone el prompt del sistema del pipeline de esta llamada.
 
     Función pura y separada para poder probarla sin montar un pipeline: es lo
     único que distingue a una llamada de misión de una entrante normal.
+
+    Args:
+        runtime: Configuración del panel, ya cargada.
+        mision: La misión si esta llamada la marcó el planificador.
+        llamada: La llamada según el puente, si se pudo consultar. En una
+            entrante, su `nombre_agenda` permite saludar al paciente por su
+            nombre; en una misión no se usa, porque la tarea ya trae el
+            contacto.
     """
     base = runtime.prompt.prompt_sistema_efectivo
     if mision is None:
-        return base + PROMPT_LLAMADA
+        prompt = base + PROMPT_LLAMADA
+        if llamada is not None and llamada.nombre_agenda:
+            prompt += PROMPT_IDENTIDAD_AGENDA.format(
+                nombre=llamada.nombre_agenda, numero=llamada.numero or "desconocido"
+            )
+        return prompt
     return base + PROMPT_LLAMADA_MISION + instruccion_mision_llamada(mision.tarea)
 
 
@@ -161,10 +191,24 @@ async def _conversar(
     # Retrasar el arranque del núcleo para esperar la confirmación es
     # exactamente lo que revienta el SCO con ECONNRESET.
     mision = await misiones.tomar_si_en_curso(telefonia) if misiones is not None else None
+
+    # La identidad de quien llama, si la agenda del móvil la conoce. Nunca
+    # puede impedir atender: si el puente no contesta a tiempo, la llamada
+    # sigue y Clara pregunta el nombre como siempre.
+    llamada_actual: Llamada | None = None
+    if mision is None and telefonia is not None:
+        try:
+            estado = await telefonia.estado()
+            llamada_actual = next(iter(estado.llamadas), None)
+        except Exception as e:
+            logger.warning(f"No se pudo consultar la identidad de la llamada: {e}")
+
     stt, llm, tts = await servicios.tomar()
 
     contexto = LLMContext(
-        messages=[{"role": "system", "content": _prompt_de_llamada(runtime, mision)}],
+        messages=[
+            {"role": "system", "content": _prompt_de_llamada(runtime, mision, llamada_actual)}
+        ],
         # Las mismas herramientas de la sala menos las de telefonía. Al pasarlas
         # aquí, Pipecat registra solo sus manejadores; llegan al RAG a través de
         # `app_resources`, que se le da al worker más abajo. El prompt de la
