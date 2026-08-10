@@ -177,8 +177,15 @@ precio de que cada respuesta esté anclada en documentos.
 - La voz de Piper es un español de España (`es_ES-davefx-medium`); no hay voz
   colombiana de calidad comparable en Piper. El registro y el léxico de Clara
   sí son colombianos.
-- La telefonía Bluetooth y los botones físicos del proyecto base están
-  desactivados: el reto no usa telefonía real.
+- **Telefonía real (extra, experimental)**: además del navegador, el agente
+  contesta llamadas de un móvil emparejado por Bluetooth (HFP/SCO) con el
+  mismo prompt clínico y sus herramientas de triaje — validado con
+  conversaciones reales. El reto no lo exige (la evaluación va por el
+  navegador); en este camino el audio va a 8 kHz, las alertas no llevan traza
+  documental y no hay resumen de respaldo al colgar sin despedida. El
+  adaptador Bluetooth necesita el wide-band-speech apagado (ver
+  `deploy/clara-telefonia.service`). Los botones físicos del proyecto
+  base siguen desactivados.
 
 ## Estructura del repositorio
 
