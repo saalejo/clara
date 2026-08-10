@@ -41,7 +41,9 @@ def main() -> int:
 
     key_id, token = valor("TURN_KEY_ID"), valor("TURN_KEY_TOKEN")
     if not key_id or not token:
-        print("Faltan TURN_KEY_ID o TURN_KEY_TOKEN en el .env (dashboard de Cloudflare → Realtime).")
+        print(
+            "Faltan TURN_KEY_ID o TURN_KEY_TOKEN en el .env (dashboard de Cloudflare → Realtime)."
+        )
         return 1
 
     peticion = urllib.request.Request(
