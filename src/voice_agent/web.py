@@ -433,6 +433,20 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
         handler: SmallWebRTCRequestHandler = request.app.state.handler
         servicios: ServiciosWeb = request.app.state.servicios
 
+        # Gana la última conexión. En modo SINGLE, una sesión anterior que no
+        # llegó a cerrarse (una pestaña recargada, un portátil suspendido)
+        # queda zombi en el handler y rechaza toda oferta nueva con un 400 —
+        # pasó en una prueba real: recargar la página bloqueaba la interfaz
+        # hasta reiniciar el servicio. Si llega una oferta sin pc_id (una
+        # sesión nueva de verdad), la anterior está muerta o va a morir:
+        # desconectarla desmonta su pipeline por el evento "closed" y deja el
+        # sitio libre. Un juez que recarga la pestaña siempre puede volver.
+        if oferta.pc_id is None:
+            for conexion_previa in list(handler._pcs_map.values()):
+                logger.info(f"Desconectando la sesión previa {conexion_previa.pc_id}")
+                await conexion_previa.disconnect()
+            handler._pcs_map.clear()
+
         async def _al_conectar(conexion: SmallWebRTCConnection) -> None:
             # La conversación corre en su propia tarea: esta petición HTTP
             # tiene que devolver la respuesta SDP ya, no al colgar.
