@@ -1,0 +1,16 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Despliegues</h1>
+<p class="pie">Lo que se le ha enviado al agente, tal cual se envió. Es lo que
+  contesta el «cambié algo y no pasó nada».</p>
+<table>
+  <tr><th>Cuándo</th><th>Resultado</th><th>Quién</th><th>Detalle</th><th></th></tr>
+  {% for d in despliegues %}
+  <tr><td>{{ d.creado_en|date:"d/m/Y H:i:s" }}</td><td>{{ d.get_resultado_display }}</td>
+    <td>{{ d.autor|default:"—" }}</td><td>{{ d.detalle|truncatechars:90 }}</td>
+    <td><a href="{% url 'despliegue_detalle' d.pk %}">ver</a></td></tr>
+  {% empty %}
+  <tr><td colspan="5" class="ayuda">Todavía no se ha desplegado nada.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

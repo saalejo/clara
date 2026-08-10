@@ -1,0 +1,39 @@
+[project]
+name = "voice-agent-panel"
+version = "0.1.0"
+description = "Panel web para configurar y controlar el agente de voz"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+
+dependencies = [
+    # Configuración y modelos compartidos con el agente. Es la única dependencia
+    # que los une, y es deliberadamente ligera: `voice-agent-core` no arrastra
+    # Pipecat ni chromadb, que es lo que permite que esta imagen pese ~200 MB
+    # frente a los 1,7 GB de la del agente.
+    "voice-agent-core",
+
+    "django>=5.2,<6",
+    # Sirve los ficheros estáticos desde el propio proceso. Aquí no hay un nginx
+    # delante ni tiene sentido ponerlo para una placa de un solo usuario.
+    "whitenoise>=6.8,<7",
+    # `jeepney` NO se declara aquí desde que el control de systemd vive en
+    # `voice_agent_core.systemd`: el panel ya no lo importa directamente, así que
+    # declararlo sería mentir sobre quién lo usa. Llega a la imagen por `core`.
+    "uvicorn>=0.34,<1",
+    # Cliente MCP, para poder sondear un servidor http/sse antes de guardarlo.
+    # Los de tipo stdio no se pueden sondear desde aquí: su comando vive en la
+    # imagen del agente, no en ésta.
+    "mcp>=1.11,<2",
+    # Para preguntar por la agenda al puente de telefonía por su socket unix
+    # (el buscador de contactos del formulario de tareas). Ya llegaba de
+    # refilón vía `mcp`; se declara porque ahora se importa directamente.
+    "httpx>=0.27,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_agent_panel"]

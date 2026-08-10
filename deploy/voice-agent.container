@@ -1,0 +1,104 @@
+# Unidad Quadlet para ejecutar el agente como servicio de systemd de usuario.
+#
+# Quadlet es la integración nativa de Podman 5 con systemd: en vez de generar y
+# mantener a mano un fichero .service, se escribe este .container y systemd
+# deriva el servicio automáticamente al recargar. Sustituye a `podman generate
+# systemd`, que está obsoleto, y a podman-compose.
+#
+# Instalación (`make install-service` lo hace por ti, sustituyendo la ruta):
+#
+#     cp deploy/voice-agent.container ~/.config/containers/systemd/
+#     systemctl --user daemon-reload
+#     systemctl --user start voice-agent
+#
+# El servicio corre como servicio de **usuario**, sin privilegios de
+# administrador. Para que siga vivo sin sesión abierta hace falta que el
+# usuario tenga "linger" activado:
+#
+#     loginctl enable-linger $USER
+#
+# Logs:    journalctl --user -u voice-agent -f
+# Estado:  systemctl --user status voice-agent
+
+[Unit]
+Description=Agente de voz conversacional (Pipecat + OpenRouter + RAG)
+Documentation=file://@@PROJECT_DIR@@/README.md
+# La tarjeta USB puede tardar en enumerarse tras el arranque de la placa.
+After=sound.target
+Wants=network-online.target
+After=network-online.target
+# NO lleva RequiresMountsFor. Lo llevó mientras el almacén de imágenes de Podman
+# vivía en un pendrive montado en /mnt/almacen, porque la microSD de 15 GB no daba
+# para construir: sin ese montaje, Podman veía un almacén vacío y fallaba con un
+# "no such image" que no mencionaba el disco. Con la tarjeta de 58 GB el almacén
+# está en la propia raíz (~/.local/share/containers/storage), así que no hay
+# ningún montaje al que esperar.
+
+[Container]
+Image=localhost/voice-agent:latest
+ContainerName=voice-agent
+
+# --- Acceso a la tarjeta de sonido -------------------------------------------
+# La tarjeta va como bind mount de /dev/snd, NO como `AddDevice=/dev/snd`.
+# `AddDevice` copia los nodos que existen al arrancar el contenedor, y ahí se
+# acaba: una tarjeta USB conectada después crea sus nodos en el /dev/snd del
+# anfitrión pero el contenedor nunca los ve. Con el bind mount el contenedor ve
+# el directorio vivo del anfitrión, que es lo que hace posible conectar y
+# quitar la tarjeta con el agente en marcha (el agente ya lo tolera: vigila
+# /proc/asound y monta o desmonta el audio de la sala solo). En rootless no hay
+# cgroup de dispositivos que se pierda por hacerlo así: el control de acceso
+# real son los permisos de los nodos.
+#
+# Los nodos de /dev/snd pertenecen a root:audio con permisos 660. En modo
+# rootless, el GID del grupo `audio` del anfitrión no se mapea dentro del
+# espacio de nombres de usuario del contenedor, así que el proceso no tendría
+# permiso para abrirlos. `keep-groups` le dice a crun que conserve los grupos
+# suplementarios del usuario del anfitrión —que ya pertenece a `audio`—, y con
+# eso el acceso funciona. Sin esta línea el contenedor no abre el audio.
+Volume=/dev/snd:/dev/snd
+GroupAdd=keep-groups
+
+# Dos argumentos que se pasan tal cual a `podman run`:
+#
+# --ipc=host  Comparte el espacio de nombres de IPC con el anfitrión. Los
+#             plugins dmix y dsnoop de ALSA se coordinan mediante memoria
+#             compartida de System V; si el contenedor tiene su propio espacio
+#             de IPC, su mezclador y el del anfitrión no se ven, y el segundo
+#             en abrir la tarjeta recibe "dispositivo ocupado". Con esto se
+#             puede lanzar `aplay` o `arecord` de diagnóstico en el anfitrión
+#             mientras el agente conversa dentro del contenedor.
+#
+# --memory    Tope de memoria. La placa tiene 3.8 GB; este límite deja margen
+#             holgado al sistema y evita que un fallo de memoria en el agente
+#             arrastre a toda la máquina. Va aquí y no como clave `Memory=`
+#             porque Quadlet no reconoce esa clave en el grupo [Container].
+PodmanArgs=--ipc=host --memory=2g
+
+# --- Configuración y datos ----------------------------------------------------
+EnvironmentFile=@@PROJECT_DIR@@/.env
+
+# Estas dos van DESPUÉS del EnvironmentFile y ganan sobre él a propósito. Las
+# rutas dentro del contenedor no son las del anfitrión, y si alguien
+# descomenta DATA_DIR en su .env, sin esto el agente buscaría el índice en una
+# ruta relativa que no existe dentro de la imagen.
+Environment=DATA_DIR=/data
+Environment=CORPUS_DIR=/corpus
+
+# La zona horaria del planificador de tareas: las expresiones cron del panel
+# están en hora de Colombia, y la imagen viene en UTC. Sin esto, una tarea de
+# "las 8 de la mañana" sonaría a las 3 de la madrugada.
+Environment=TZ=America/Bogota
+
+# Índice de Chroma y modelos descargados. El sufijo :Z reetiqueta para SELinux;
+# es inocuo en sistemas sin SELinux como este Armbian.
+Volume=@@PROJECT_DIR@@/data:/data:Z
+Volume=@@PROJECT_DIR@@/corpus:/corpus:ro,Z
+
+[Service]
+Restart=on-failure
+RestartSec=10
+# Cargar Whisper, Piper y el modelo de embeddings lleva su tiempo en esta CPU.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

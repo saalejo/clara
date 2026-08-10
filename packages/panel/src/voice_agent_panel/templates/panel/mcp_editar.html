@@ -1,0 +1,16 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>{% if servidor.pk %}{{ servidor.nombre }}{% else %}Servidor MCP nuevo{% endif %}</h1>
+<p class="pie">Los de tipo <code>stdio</code> se lanzan como proceso hijo del agente;
+  los de <code>http</code> y <code>sse</code> son remotos y sí se pueden sondear
+  desde aquí antes de desplegar.</p>
+<form method="post" class="tarjeta">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for campo in form %}{% include "panel/_campo.html" with campo=campo %}{% endfor %}
+  <div class="acciones">
+    <button class="principal" type="submit">Guardar</button>
+    <a class="boton" href="{% url 'mcp' %}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

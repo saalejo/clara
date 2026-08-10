@@ -1,0 +1,17 @@
+{% extends "panel/base.html" %}
+{% block titulo %}{{ perfil.nombre }}{% endblock %}
+{% block contenido %}
+<h1>{{ perfil.nombre }}</h1>
+<p class="pie">Aquí solo el nombre y la descripción. El contenido del perfil se
+  edita en sus páginas —Prompt y alma, Ajustes, Herramientas, Servidores MCP y
+  Hooks— con el perfil seleccionado como «en edición».</p>
+<form method="post" class="tarjeta">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for campo in form %}{% include "panel/_campo.html" with campo=campo %}{% endfor %}
+  <div class="acciones">
+    <button class="principal" type="submit">Guardar</button>
+    <a class="boton" href="{% url 'perfiles' %}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,135 @@
+"""Rutas de los ficheros que el panel y el agente se intercambian.
+
+El panel y el agente corren en **contenedores distintos** y no se hablan por red:
+se comunican dejando ficheros JSON en el volumen de datos, que ambos montan.
+Este módulo es el único sitio donde se decide cómo se llaman y dónde están, para
+que un cambio de nombre no se convierta en una cacería.
+
+    <DATA_DIR>/config/settings.json          panel -> agente (campos de Settings)
+    <DATA_DIR>/config/runtime.json           panel -> agente (prompt, alma, tools, mcp, hooks)
+    <DATA_DIR>/config/tareas.json            panel -> agente (tareas programadas)
+    <DATA_DIR>/config/estado_arranque.json   agente -> panel (qué cargó de verdad)
+    <DATA_DIR>/logs/agente.log               agente -> panel (log en vivo)
+    <DATA_DIR>/tareas/resultados/<id>/       agente -> panel (respuestas de cuestionarios)
+    <DATA_DIR>/tareas/bitacora.jsonl         agente -> panel (bitácora de ejecuciones)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+SUBDIR_CONFIG = "config"
+SUBDIR_LOGS = "logs"
+SUBDIR_TAREAS = "tareas"
+
+NOMBRE_SNAPSHOT_SETTINGS = "settings.json"
+NOMBRE_RUNTIME = "runtime.json"
+NOMBRE_TAREAS = "tareas.json"
+NOMBRE_ESTADO = "estado_arranque.json"
+NOMBRE_LOG_AGENTE = "agente.log"
+NOMBRE_BITACORA_TAREAS = "bitacora.jsonl"
+
+#: Variable de entorno para apuntar la instantánea a otro sitio. La usan los
+#: tests para aislarse (ver `tests/conftest.py`) y sirve de escape en desarrollo.
+VAR_ENTORNO_SNAPSHOT = "VOICE_AGENT_PANEL_CONFIG"
+
+
+def dir_config(data_dir: Path) -> Path:
+    """Carpeta donde viven los ficheros de intercambio."""
+    return data_dir / SUBDIR_CONFIG
+
+
+def ruta_snapshot_settings(data_dir: Path) -> Path:
+    """Instantánea de los campos de `Settings` que gobierna el panel."""
+    return dir_config(data_dir) / NOMBRE_SNAPSHOT_SETTINGS
+
+
+def ruta_runtime(data_dir: Path) -> Path:
+    """Configuración de prompt, alma, herramientas, MCP y hooks."""
+    return dir_config(data_dir) / NOMBRE_RUNTIME
+
+
+def ruta_tareas(data_dir: Path) -> Path:
+    """Tareas programadas que el panel exporta y el agente recarga en caliente."""
+    return dir_config(data_dir) / NOMBRE_TAREAS
+
+
+def dir_tareas(data_dir: Path) -> Path:
+    """Carpeta de trabajo de las tareas: resultados y bitácora."""
+    return data_dir / SUBDIR_TAREAS
+
+
+def dir_resultados_tareas(data_dir: Path) -> Path:
+    """Respuestas de cuestionarios, una subcarpeta por id de tarea."""
+    return dir_tareas(data_dir) / "resultados"
+
+
+def ruta_bitacora_tareas(data_dir: Path) -> Path:
+    """Bitácora de ejecuciones del planificador, una línea JSON por disparo."""
+    return dir_tareas(data_dir) / NOMBRE_BITACORA_TAREAS
+
+
+def ruta_estado(data_dir: Path) -> Path:
+    """Lo que el agente publica sobre sí mismo tras arrancar."""
+    return dir_config(data_dir) / NOMBRE_ESTADO
+
+
+def ruta_log_agente(data_dir: Path) -> Path:
+    """Copia en fichero del log del agente, que el panel sigue en vivo."""
+    return data_dir / SUBDIR_LOGS / NOMBRE_LOG_AGENTE
+
+
+def ruta_snapshot_desde_entorno() -> Path:
+    """Resuelve la ruta de la instantánea leyendo solo el entorno.
+
+    No puede recibir un `Settings` porque se la llama **mientras se construye**
+    uno: es la fuente de configuración la que necesita saber de dónde leer. Que
+    la ruta salga de `os.environ` y no de un campo tiene una ventaja que no es
+    accidental: garantiza por construcción que `data_dir` nunca puede venir de
+    la propia instantánea, que es justo la trampa de rutas que rompió el
+    contenedor en su día.
+
+    Returns:
+        La ruta del fichero, exista o no.
+    """
+    explicita = os.environ.get(VAR_ENTORNO_SNAPSHOT)
+    if explicita:
+        return Path(explicita)
+    return ruta_snapshot_settings(Path(os.environ.get("DATA_DIR", "data")))
+
+
+def escribir_json_atomico(ruta: Path, datos: Any) -> None:
+    """Escribe un JSON de forma que nunca se lea a medias.
+
+    Se escribe en un temporal del mismo directorio —tiene que ser el mismo
+    sistema de ficheros para que `os.replace` sea atómico— se fuerza a disco y
+    se renombra encima. Sin esto, un corte de corriente en el momento justo
+    dejaría un fichero truncado y la placa arrancaría sin agente.
+
+    Args:
+        ruta: Destino final.
+        datos: Cualquier cosa serializable a JSON.
+    """
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporal = tempfile.mkstemp(dir=ruta.parent, prefix=f".{ruta.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as fichero:
+            json.dump(datos, fichero, ensure_ascii=False, indent=2)
+            fichero.flush()
+            os.fsync(fichero.fileno())
+        # `mkstemp` crea con permisos 600, que es lo correcto para un temporal
+        # pero no para esto: son ficheros de intercambio entre dos contenedores
+        # que no tienen por qué correr con el mismo usuario dentro. Hoy funciona
+        # porque ambos acaban siendo el mismo uid en el anfitrión, pero basta
+        # cambiar el mapeo de uno para que el otro deje de poder leerlos, con un
+        # "permission denied" difícil de relacionar con esto. No llevan secretos:
+        # las claves están en CAMPOS_PROTEGIDOS y no salen del .env.
+        os.chmod(temporal, 0o644)
+        os.replace(temporal, ruta)
+    except BaseException:
+        Path(temporal).unlink(missing_ok=True)
+        raise

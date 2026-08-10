@@ -1,0 +1,43 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Perfiles{% endblock %}
+{% block contenido %}
+<h1>Perfiles</h1>
+<p class="pie">Cada perfil es un juego completo de configuración: prompt y alma,
+  ajustes, herramientas y selección de servidores MCP y hooks. Solo uno está
+  activo, y activar no despliega: falta exportar y reiniciar desde la portada.</p>
+
+<table style="margin-top:1rem">
+  <tr><th>Nombre</th><th>Descripción</th><th>Activo</th><th>En edición</th><th></th></tr>
+  {% for p in perfiles %}
+  <tr>
+    <td><a href="{% url 'perfil_editar' p.pk %}">{{ p.nombre }}</a></td>
+    <td>{{ p.descripcion|default:"—" }}</td>
+    <td>{% if p.activo %}<span class="estado activo">activo</span>{% else %}—{% endif %}</td>
+    <td>{% if perfil_en_edicion.pk == p.pk %}sí{% else %}
+      <form method="post" action="{% url 'perfil_seleccionar' p.pk %}">{% csrf_token %}
+        <button type="submit">Editar aquí</button></form>{% endif %}</td>
+    <td>
+      {% if not p.activo %}
+      <form method="post" action="{% url 'perfil_activar' p.pk %}">{% csrf_token %}
+        <button type="submit">Activar</button></form>
+      {% endif %}
+      <form method="post" action="{% url 'perfil_duplicar' p.pk %}">{% csrf_token %}
+        <button type="submit">Duplicar</button></form>
+      {% if not p.activo %}
+      <form method="post" action="{% url 'perfil_borrar' p.pk %}">{% csrf_token %}
+        <button class="peligro" type="submit">Borrar</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Perfil nuevo</h2>
+<form method="post" class="tarjeta">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for campo in form %}{% include "panel/_campo.html" with campo=campo %}{% endfor %}
+  <div class="acciones"><button class="principal" type="submit">Crear</button></div>
+  <p class="ayuda">Nace vacío y sin activar. Para partir de uno existente, usa «Duplicar».</p>
+</form>
+{% endblock %}

@@ -1,0 +1,78 @@
+# Mando físico de la tarjeta de sonido, como servicio de usuario NATIVO.
+#
+# Instalación (`make install-botones` lo hace por ti, sustituyendo la ruta):
+#
+#     cp deploy/voice-agent-botones.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now voice-agent-botones
+#
+# ESTE NO ES UN CONTENEDOR, igual que el puente de telefonía. Dos razones, ambas
+# insalvables (el detalle está en packages/botones/README.md):
+#
+#   1. No vería los botones. /dev/input no está en ninguna unidad de contenedor
+#      del proyecto, y montarlo traería el problema de que los enlaces estables
+#      de /dev/input/by-id/ los crea udev en el anfitrión y no existen dentro.
+#   2. No podría arrancar ni parar el agente. Gobernar el systemd del usuario
+#      exige el bus de sesión, y allí la autenticación EXTERNAL contrasta el uid
+#      con SO_PEERCRED: en un contenedor rootless el proceso es uid 0 dentro pero
+#      1000 fuera, y el bus responde REJECTED EXTERNAL.
+#
+# NO HACE FALTA NINGUNA REGLA DE UDEV. Comprobado en la placa:
+# /dev/input/event0 es `crw-rw---- root:input` y el usuario ya pertenece al grupo
+# `input` (gid 995), así que el device se abre sin privilegios.
+#
+# DÓNDE ESTÁN LOS LOGS, que no es donde uno los busca: `journalctl --user -u
+# voice-agent-botones` sale VACÍO, igual que con las demás unidades de este
+# proyecto. Esta Armbian no mantiene journal de usuario, así que todo va al del
+# SISTEMA, y allí el proceso aparece etiquetado como `uv` —no con el nombre de la
+# unidad— porque el ExecStart de abajo es `uv run`. Para verlos:
+#
+#     sudo journalctl _SYSTEMD_USER_UNIT=voice-agent-botones.service -f
+#
+# o, más corto, `make botones-logs`.
+
+[Unit]
+Description=Mando físico del agente de voz sobre los botones de la tarjeta USB
+Documentation=file://@@PROJECT_DIR@@/docs/botones.md
+
+# La tarjeta USB puede tardar en enumerarse tras el arranque de la placa. No hace
+# falta ordenarse contra nada: el demonio arranca sin device y espera a que
+# aparezca, sondeando cada dos segundos. Ver `LectorDeBotones.abrir`.
+#
+# Y OJO: aquí NO se puede poner After=sound.target ni After=bluetooth.service.
+# Son unidades del SISTEMA y el gestor de usuario no las conoce, así que la
+# dependencia se ignora EN SILENCIO, que es peor que no ponerla porque da falsa
+# seguridad.
+#
+# Tampoco lleva Wants=voice-agent-telefonia.service, y es deliberado: tolerar que
+# el puente no esté es la mitad del sentido del modo «solo tarjeta de sonido»,
+# que precisamente lo para.
+
+[Service]
+Type=exec
+WorkingDirectory=@@PROJECT_DIR@@
+
+# Ruta absoluta a `uv`: un servicio de systemd no hereda el PATH de .bashrc.
+# Es la misma razón por la que el Makefile antepone ~/.local/bin.
+ExecStart=%h/.local/bin/uv run --package voice-agent-botones python -m voice_agent_botones
+
+# La misma carpeta `data` que usan el agente y el puente. De ahí salen el socket
+# del puente (run/telefonia.sock) y los WAV de los pitidos (pitidos/).
+Environment=DATA_DIR=@@PROJECT_DIR@@/data
+
+# Opcional: umbrales de duración, paso de volumen, y BOTONES_ACAPARAR=0 si se
+# quiere depurar con el servicio en marcha.
+EnvironmentFile=-@@PROJECT_DIR@@/.env.botones
+
+# `always` y no `on-failure`: este proceso no debería salir nunca por su cuenta,
+# así que si sale —incluso con código 0— queremos que vuelva.
+Restart=always
+RestartSec=3
+
+# El pitido de arranque es útil, pero en un bucle de reinicio sonaría cada tres
+# segundos. El StartLimitBurst por defecto (5 en 10 s) acaba dejando la unidad en
+# `failed`, lo que acota el ruido a unos cinco pitidos. Es aceptable a cambio de
+# no perder el aviso de "el mando está listo" en el arranque normal.
+
+[Install]
+WantedBy=default.target

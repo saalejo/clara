@@ -1,0 +1,37 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Panel del agente{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'panel/estilo.css' %}">
+</head>
+<body>
+{% if user.is_authenticated %}
+<nav>
+  <a class="marca" href="{% url 'panel' %}">Agente de voz</a>
+  <a href="{% url 'perfiles' %}">Perfiles</a>
+  <a href="{% url 'prompt' %}">Prompt y alma</a>
+  <a href="{% url 'ajustes' %}">Ajustes</a>
+  <a href="{% url 'herramientas' %}">Herramientas</a>
+  <a href="{% url 'conocimiento' %}">Conocimiento</a>
+  <a href="{% url 'mcp' %}">Servidores MCP</a>
+  <a href="{% url 'hooks' %}">Hooks</a>
+  <a href="{% url 'tareas' %}">Tareas</a>
+  <a href="{% url 'logs' %}">Logs</a>
+  <a href="{% url 'despliegues' %}">Despliegues</a>
+  <form method="post" action="{% url 'logout' %}" class="derecha">
+    {% csrf_token %}<button class="enlace">Salir</button>
+  </form>
+</nav>
+{% endif %}
+
+<main>
+  {% if messages %}
+    {% for m in messages %}<div class="aviso {{ m.tags }}">{{ m }}</div>{% endfor %}
+  {% endif %}
+
+  {% block contenido %}{% endblock %}
+</main>
+</body>
+</html>

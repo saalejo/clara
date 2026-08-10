@@ -1,0 +1,53 @@
+# Reindexación del corpus del RAG, como unidad de un solo uso.
+#
+# Existe para que el panel pueda lanzarla: corre en un contenedor propio, con la
+# imagen del **agente** —que es la que tiene chromadb y fastembed— y con su
+# propio tope de memoria. Hacerlo dentro del panel obligaría a meter esas
+# dependencias en su imagen, que es justo lo que se quiere evitar; y hacerlo
+# dentro del agente le pegaría un pico de 400 MB mientras conversa.
+#
+# Se lanza sola y termina:
+#
+#     systemctl --user start voice-agent-ingest
+#
+# El panel hace esa misma llamada por D-Bus, aunque no espera igual: `systemctl`
+# se queda escuchando la señal `JobRemoved`, mientras que el `StartUnit` del bus
+# vuelve en cuanto systemd encola el trabajo. Por eso el panel no da la
+# reindexación por terminada, sino por *lanzada*, y consulta el estado de esta
+# unidad para saber cómo acabó.
+
+[Unit]
+Description=Reindexa el corpus del agente de voz en ChromaDB
+Documentation=file://@@PROJECT_DIR@@/docs/rag.md
+
+[Container]
+Image=localhost/voice-agent:latest
+ContainerName=voice-agent-ingest
+# Sin `--reset`. Desde que cada tema tiene su colección, la ingesta normal
+# reconcilia: añade lo nuevo, borra los fragmentos de documentos que ya no están
+# y elimina las colecciones de los temas que han desaparecido. Reconstruir desde
+# cero costaba unos cien segundos y ya no hace falta salvo al cambiar
+# EMBEDDING_MODEL, CHUNK_SIZE o CHUNK_OVERLAP — para eso está `make reingest`.
+Exec=python -m voice_agent.rag.ingest
+
+# Quadlet añade --sdnotify=conmon por defecto, que en un oneshot deja la unidad
+# esperando una notificación que nunca llega. Con esto se ejecuta en primer
+# plano y systemd se guía por el código de salida.
+Notify=false
+
+# Un giga: fastembed carga su modelo ONNX y se come unos 400 MB. Se le deja
+# margen sin llegar a competir con los 2 GB del agente.
+PodmanArgs=--memory=1g
+
+EnvironmentFile=@@PROJECT_DIR@@/.env
+Environment=DATA_DIR=/data
+Environment=CORPUS_DIR=/corpus
+
+Volume=@@PROJECT_DIR@@/data:/data:Z
+Volume=@@PROJECT_DIR@@/corpus:/corpus:ro,Z
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+# Reindexar el corpus entero en esta CPU lleva su tiempo.
+TimeoutStartSec=1800

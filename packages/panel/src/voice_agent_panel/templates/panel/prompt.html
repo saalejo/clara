@@ -1,0 +1,34 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Prompt y alma</h1>
+<p class="pie">Guardar crea una versión nueva y la activa. El historial no se
+  reescribe nunca: volver atrás también crea una versión.</p>
+{% include "panel/_perfil_franja.html" %}
+
+<form method="post" class="tarjeta">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% include "panel/_campo.html" with campo=form.mensaje %}
+  {% include "panel/_campo.html" with campo=form.prompt_sistema %}
+  {% include "panel/_campo.html" with campo=form.alma %}
+  {% include "panel/_campo.html" with campo=form.saludo_inicial %}
+  {% include "panel/_campo.html" with campo=form.muletillas_texto %}
+  <div class="acciones"><button class="principal" type="submit">Guardar y activar</button></div>
+</form>
+
+<h2>Historial</h2>
+<table>
+  <tr><th>Cuándo</th><th>Mensaje</th><th>Alma</th><th>Quién</th><th></th></tr>
+  {% for v in historial %}
+  <tr{% if v.activa %} style="color:var(--bien)"{% endif %}>
+    <td>{{ v.creado_en|date:"d/m/Y H:i" }}{% if v.activa %} · activa{% endif %}</td>
+    <td>{{ v.mensaje|default:"—" }}</td>
+    <td>{% if v.alma %}sí{% else %}no{% endif %}</td>
+    <td>{{ v.autor|default:"—" }}</td>
+    <td>{% if not v.activa %}
+      <form method="post" action="{% url 'volver_a_version' v.pk %}">{% csrf_token %}
+        <button type="submit">Volver a esta</button></form>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,66 @@
+# Puente de telefonía Bluetooth (HFP-HF), como servicio de usuario NATIVO.
+#
+# Instalación (`make install-telefonia` lo hace por ti, sustituyendo la ruta):
+#
+#     cp deploy/voice-agent-telefonia.service ~/.config/systemd/user/
+#     systemctl --user daemon-reload
+#     systemctl --user enable --now voice-agent-telefonia
+#
+# ESTE NO ES UN CONTENEDOR, y es la única unidad del proyecto que no lo es.
+# El motivo largo está en packages/telefonia/README.md; en corto son tres:
+#
+#   1. La autenticación EXTERNAL de D-Bus contrasta el uid que dice el cliente
+#      con SO_PEERCRED. En un contenedor rootless el proceso es uid 0 dentro
+#      pero 1000 fuera, y el bus responde REJECTED EXTERNAL. El panel lo
+#      resuelve con --userns=keep-id, pero aquí harían falta DOS buses —el del
+#      sistema para oFono y el de sesión para obexd— y encima el del sistema
+#      está gobernado por la política de oFono.
+#   2. Reconstruir la imagen del agente son diez minutos, y esto se escribe a
+#      base de probar cosas contra un móvil de verdad.
+#   3. El audio SCO de la fase 2 llega como descriptor de fichero por D-Bus.
+#
+# DÓNDE ESTÁN LOS LOGS, que no es donde uno los busca: `journalctl --user -u
+# voice-agent-telefonia` sale VACÍO. Comprobado en la placa. Esta Armbian no
+# mantiene journal de usuario, así que todo va al del SISTEMA, y allí el
+# proceso aparece etiquetado como `uv` —no con el nombre de la unidad— porque
+# el ExecStart de abajo es `uv run`. Para verlos:
+#
+#     sudo journalctl _SYSTEMD_USER_UNIT=voice-agent-telefonia.service -f
+#
+# o, más corto, `make telefonia-logs`.
+
+[Unit]
+Description=Puente de telefonía Bluetooth (HFP-HF) para el agente de voz
+Documentation=file://@@PROJECT_DIR@@/docs/telefonia.md
+
+# OJO: aquí NO se puede poner After=bluetooth.service ni After=ofono.service.
+# Son unidades del SISTEMA y el gestor de usuario no las conoce: la dependencia
+# se ignora EN SILENCIO, que es peor que no ponerla porque da falsa seguridad.
+# No hace falta: el puente arranca aunque no haya ni bus ni móvil, y se engancha
+# solo en cuanto aparecen. Ver `Servicio.arrancar`.
+
+[Service]
+Type=exec
+WorkingDirectory=@@PROJECT_DIR@@
+
+# Ruta absoluta a `uv`: un servicio de systemd no hereda el PATH de .bashrc.
+# Es la misma razón por la que el Makefile antepone ~/.local/bin.
+ExecStart=%h/.local/bin/uv run --package voice-agent-telefonia python -m voice_agent_telefonia
+
+# La misma carpeta `data` que monta el contenedor del agente en /data. Ahí
+# dentro se crea `run/telefonia.sock`, y por eso el agente lo ve sin que haya
+# que tocar deploy/voice-agent.container.
+Environment=DATA_DIR=@@PROJECT_DIR@@/data
+
+# Opcional: fija la MAC del móvil si algún día hay más de uno emparejado.
+EnvironmentFile=-@@PROJECT_DIR@@/.env.telefonia
+
+Restart=on-failure
+RestartSec=5
+
+# NO se usa RuntimeDirectory=. systemd la borra y la recrea en cada arranque, y
+# el socket tiene que vivir bajo `data/`, que es lo que el contenedor monta.
+# El propio proceso borra un socket huérfano al arrancar.
+
+[Install]
+WantedBy=default.target

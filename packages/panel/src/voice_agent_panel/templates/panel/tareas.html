@@ -1,0 +1,41 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Tareas programadas</h1>
+<p class="pie">Misiones que el agente ejecuta solo a la hora que marque su
+  expresión cron: anunciar algo en la sala, hacer un cuestionario, o llamar por
+  teléfono con un encargo. Son comunes a todos los perfiles y se aplican
+  <em>en caliente</em>, sin desplegar ni reiniciar. Si el agente estaba apagado
+  a la hora del disparo, esa ejecución se pierde: no se recupera al arrancar.</p>
+<div class="acciones"><a class="boton" href="{% url 'tarea_nueva' %}">Añadir tarea</a></div>
+
+{# El botón de borrar apunta con el atributo form a un formulario declarado #}
+{# fuera de la tabla: anidar formularios es HTML inválido. #}
+<form method="post" id="seleccion-tareas">{% csrf_token %}</form>
+{% for t in tareas %}
+<form method="post" action="{% url 'tarea_borrar' t.obj.pk %}" id="borrar-tarea-{{ t.obj.pk }}">{% csrf_token %}</form>
+{% endfor %}
+
+<table style="margin-top:1rem">
+  <tr><th>Activa</th><th>Tarea</th><th>Tipo</th><th>Cron</th><th>Próximo disparo</th><th></th></tr>
+  {% for t in tareas %}
+  <tr>
+    <td><input type="checkbox" form="seleccion-tareas" name="habilitada" value="{{ t.obj.pk }}"
+               {% if t.obj.habilitada %}checked{% endif %}></td>
+    <td><a href="{% url 'tarea_editar' t.obj.pk %}">{{ t.obj.titulo|default:t.obj.nombre }}</a>
+      {% if t.obj.tipo == "llamada" %}<p class="ayuda">Llama a {{ t.obj.contacto_nombre|default:t.obj.contacto_numero }}</p>{% endif %}
+      <p class="ayuda"><a href="{% url 'tarea_resultados' t.obj.pk %}">Resultados</a></p></td>
+    <td>{{ t.obj.tipo }}</td>
+    <td><code>{{ t.obj.cron }}</code></td>
+    <td>{% if t.obj.habilitada %}{{ t.proxima|date:"D d/m H:i"|default:"—" }}{% else %}<span class="ayuda">apagada</span>{% endif %}</td>
+    <td><button class="peligro" type="submit" form="borrar-tarea-{{ t.obj.pk }}">Borrar</button></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6" class="ayuda">Ninguna configurada.</td></tr>
+  {% endfor %}
+</table>
+{% if tareas %}
+<div class="acciones">
+  <button class="principal" type="submit" form="seleccion-tareas">Guardar selección</button>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Despliegue del {{ despliegue.creado_en|date:"d/m/Y H:i:s" }}</h1>
+<p class="pie">{{ despliegue.get_resultado_display }}{% if despliegue.detalle %} · {{ despliegue.detalle }}{% endif %}</p>
+<h2>settings.json</h2><pre>{{ settings_json }}</pre>
+<h2>runtime.json</h2><pre>{{ runtime_json }}</pre>
+{% endblock %}

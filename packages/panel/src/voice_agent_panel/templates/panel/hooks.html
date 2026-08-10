@@ -1,0 +1,43 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Hooks</h1>
+<p class="pie">Reglas que se disparan en puntos concretos de la conversación. La
+  definición es común a todos los perfiles; la casilla dice si <em>este</em>
+  perfil los activa. Uno recién escrito no pertenece a ningún perfil: no debe
+  estrenarse solo.</p>
+{% include "panel/_perfil_franja.html" %}
+{% if not comandos_permitidos %}
+<div class="aviso warning">Los hooks que ejecutan comandos están desactivados en
+  esta instalación (<code>PANEL_HOOKS_COMANDO=0</code>).</div>
+{% endif %}
+<div class="acciones"><a class="boton" href="{% url 'hook_nuevo' %}">Añadir hook</a></div>
+
+{# El botón de borrar apunta con el atributo form a un formulario declarado #}
+{# fuera de la tabla: anidar formularios es HTML inválido. #}
+<form method="post" id="seleccion-hooks">{% csrf_token %}</form>
+{% for h in hooks %}
+<form method="post" action="{% url 'hook_borrar' h.obj.pk %}" id="borrar-hook-{{ h.obj.pk }}">{% csrf_token %}</form>
+{% endfor %}
+
+<table style="margin-top:1rem">
+  <tr><th>Activo</th><th>Nombre</th><th>Evento</th><th>Acción</th><th>Orden</th><th></th></tr>
+  {% for h in hooks %}
+  <tr>
+    <td><input type="checkbox" form="seleccion-hooks" name="habilitado" value="{{ h.obj.pk }}"
+               {% if h.habilitado %}checked{% endif %}></td>
+    <td><a href="{% url 'hook_editar' h.obj.pk %}">{{ h.obj.nombre }}</a>
+      {% if h.obj.patron %}<p class="ayuda"><code>{{ h.obj.patron }}</code> → <code>{{ h.obj.reemplazo }}</code></p>{% endif %}
+      {% if h.obj.comando %}<p class="ayuda"><code>{{ h.obj.comando|join:" " }}</code>{% if h.obj.bloqueante %} · bloqueante{% endif %}</p>{% endif %}</td>
+    <td>{{ h.obj.evento }}</td><td>{{ h.obj.accion }}</td><td>{{ h.obj.orden }}</td>
+    <td><button class="peligro" type="submit" form="borrar-hook-{{ h.obj.pk }}">Borrar</button></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6" class="ayuda">Ninguno configurado.</td></tr>
+  {% endfor %}
+</table>
+{% if hooks %}
+<div class="acciones">
+  <button class="principal" type="submit" form="seleccion-hooks">Guardar selección</button>
+</div>
+{% endif %}
+{% endblock %}

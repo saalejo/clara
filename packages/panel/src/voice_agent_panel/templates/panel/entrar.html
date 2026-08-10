@@ -1,0 +1,13 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Entrar — Panel del agente{% endblock %}
+{% block contenido %}
+<h1>Panel del agente de voz</h1>
+<p class="pie">Desde aquí se configura y se controla el agente. Hay que identificarse.</p>
+<form method="post" class="tarjeta" style="max-width:24rem">
+  {% csrf_token %}
+  {% if form.errors %}<p class="errores">Usuario o contraseña incorrectos.</p>{% endif %}
+  <label for="id_username">Usuario</label>{{ form.username }}
+  <label for="id_password">Contraseña</label>{{ form.password }}
+  <div class="acciones"><button class="principal" type="submit">Entrar</button></div>
+</form>
+{% endblock %}

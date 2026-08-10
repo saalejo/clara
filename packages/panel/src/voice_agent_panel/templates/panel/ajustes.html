@@ -1,0 +1,21 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Ajustes del agente</h1>
+<p class="pie">Estos campos y sus explicaciones se leen directamente de la clase
+  <code>Settings</code> del agente, así que no pueden quedarse desfasados. Dejar
+  uno en blanco significa «no lo fijes»: manda el <code>.env</code> de la placa.
+  Las rutas de datos y las claves de API no aparecen aquí a propósito.</p>
+{% include "panel/_perfil_franja.html" %}
+
+<form method="post">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% for seccion, campos in form.por_secciones %}
+    <h2>{{ seccion }}</h2>
+    <div class="tarjeta">
+      {% for campo in campos %}{% include "panel/_campo.html" with campo=campo %}{% endfor %}
+    </div>
+  {% endfor %}
+  <div class="acciones"><button class="principal" type="submit">Guardar ajustes</button></div>
+</form>
+{% endblock %}

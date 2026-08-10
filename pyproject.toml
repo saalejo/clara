@@ -1,0 +1,223 @@
+[project]
+name = "voice-agent"
+version = "0.1.0"
+description = "Agente de voz conversacional en español con Pipecat, OpenRouter y RAG sobre ChromaDB, para NanoPi R4S (RK3399, aarch64)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+
+dependencies = [
+    # Framework de orquestación de voz.
+    #   local      -> LocalAudioTransport (PyAudio/PortAudio, audio del sistema)
+    #   silero     -> SileroVADAnalyzer (detección de actividad de voz, ONNX)
+    #   whisper    -> WhisperSTTService (faster-whisper, transcripción local)
+    #   piper      -> PiperTTSService (síntesis de voz local, ONNX)
+    #   deepgram   -> DeepgramSTTService (alternativa en la nube a Whisper)
+    #   mcp        -> MCPClient, para exponerle al modelo herramientas de
+    #                 servidores externos (Model Context Protocol). Es Python
+    #                 puro y pesa poco; lo caro de MCP no es el cliente, son los
+    #                 servidores, que corren aparte.
+    # NO se incluye `local-smart-turn`: arrastra torch + torchaudio (~1 GB en
+    # ARM) y no cabe cómodamente en los 3.8 GB de RAM de la placa. Ver
+    # docs/arquitectura.md para la alternativa usada.
+    #   webrtc     -> SmallWebRTCTransport (aiortc), la llamada de voz desde el
+    #                 navegador que exige el reto (compuerta G4). aiortc es wheel
+    #                 puro y sus binarios (pylibsrtp, opencv-headless) publican
+    #                 wheels aarch64; `av` ya venía por faster-whisper.
+    # El LLM (Gemini por AI Studio o Llama por Groq, los permitidos por el
+    # reto) habla el protocolo de OpenAI, cuyo SDK es dependencia BASE de
+    # pipecat: no hace falta ningún extra para él.
+    "pipecat-ai[local,silero,whisper,piper,deepgram,mcp,webrtc]==1.6.0",
+
+    # Servidor HTTP de la interfaz de llamada (web.py): sirve la UI y negocia
+    # las ofertas WebRTC. uvicorn ya está en el lock (lo usa el panel).
+    "fastapi>=0.115,<1",
+
+    # UI de navegador lista para SmallWebRTCTransport (micrófono + altavoz).
+    # El diseño visual no puntúa en el reto; el contrato funcional sí.
+    "pipecat-ai-small-webrtc-prebuilt>=1,<2",
+
+    # Base de datos vectorial para el RAG (modo embebido, PersistentClient).
+    "chromadb>=1.5.9,<2",
+
+    # Embeddings multilingües en ONNX puro. Deliberadamente NO usamos
+    # sentence-transformers porque arrastra torch.
+    "fastembed>=0.8.0,<0.9",
+
+    # Configuración tipada y validada a partir de variables de entorno.
+    "pydantic-settings>=2.7,<3",
+
+    # Logging estructurado (Pipecat ya lo usa internamente).
+    "loguru>=0.7,<0.8",
+
+    # Lectura de PDF para el corpus del RAG (Python puro, sin dependencias C).
+    "pypdf>=5,<7",
+
+    # Cliente HTTP del puente de telefonía, por socket unix (`uds=`). Ya venía
+    # instalado como dependencia transitiva de Pipecat, pero aquí se usa
+    # directamente, así que se declara: si algún día Pipecat deja de traerlo,
+    # el fallo debe ser de resolución y no un ImportError en mitad de una
+    # conversación.
+    "httpx>=0.28,<1",
+
+    # Configuración y modelos compartidos con el panel de control. Ver
+    # packages/core/README.md: existe para que el panel pueda usar `Settings` sin
+    # arrastrar Pipecat y chromadb a su imagen.
+    "voice-agent-core",
+]
+
+[project.scripts]
+voice-agent = "voice_agent.__main__:main"
+
+# ---------------------------------------------------------------------------
+# Workspace
+# ---------------------------------------------------------------------------
+# Cinco paquetes, un solo uv.lock. Que la resolución sea única evita que el
+# agente y el panel acaben con versiones distintas de pydantic, y que cada
+# Containerfile haga `uv sync --package <x>` es lo que mantiene la imagen del
+# panel en ~200 MB: lo que no está en su lista de dependencias no se instala,
+# así que el panel no *puede* importar Pipecat aunque alguien lo intente.
+#
+# Dos de ellos corren NATIVOS en la placa y no entran en ninguna imagen:
+# `telefonia`, el puente Bluetooth, y `botones`, el mando físico de la tarjeta
+# de sonido (que además necesita `/dev/input` y el bus de sesión, dos cosas que
+# un contenedor no tiene). Están aquí para compartir el `uv.lock` y el contrato
+# de `voice_agent_core`. CUIDADO: añadir un miembro al workspace obliga a
+# copiar su `pyproject.toml` en LOS DOS Containerfiles, porque uv resuelve el
+# workspace entero y falla si le falta un miembro que el lock menciona. El
+# error no menciona qué paquete falta por ningún lado.
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+voice-agent-core = { workspace = true }
+voice-agent-telefonia = { workspace = true }
+voice-agent-botones = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8",
+    "pytest-asyncio>=0.25",
+    # Los tests del panel necesitan la base de datos y el cliente de Django.
+    "pytest-django>=4.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_agent"]
+
+# ---------------------------------------------------------------------------
+# Herramientas de calidad
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = [
+    "src",
+    "packages/core/src",
+    "packages/panel/src",
+    "packages/telefonia/src",
+    "packages/botones/src",
+    "tests",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort (orden de imports)
+    "UP",   # pyupgrade (sintaxis moderna)
+    "B",    # flake8-bugbear (errores sutiles)
+    "SIM",  # flake8-simplify
+    "RUF",  # reglas propias de ruff
+    "D",    # pydocstyle: exigimos docstrings, el proyecto es didáctico
+]
+ignore = [
+    "D203",  # incompatible con D211
+    "D213",  # incompatible con D212
+    "E501",  # la longitud la gobierna el formateador
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+# Las herramientas del agente son "direct functions" de Pipecat: su primer
+# parámetro, `params`, lo inyecta el framework y queda excluido del esquema que
+# ve el modelo. Documentarlo en el docstring solo añadiría ruido a la
+# descripción que se le manda al LLM, que es para lo que sirve ese texto.
+"src/voice_agent/tools/*" = ["D417"]
+# Idem para las migraciones generadas.
+"packages/panel/src/voice_agent_panel/migrations/*" = ["D", "E501", "RUF012"]
+# El panel es Django, y Django tiene sus propios idiomas que estas reglas no
+# contemplan: `class Meta` no lleva docstring (D106), `__str__` de un modelo
+# tampoco aporta nada documentándolo (D105), y `ordering`, `fields`, `widgets` o
+# `constraints` son listas de clase por diseño del framework, no descuidos
+# (RUF012). El resto de reglas —incluida la exigencia de docstring en funciones
+# y métodos propios— sigue aplicando.
+"packages/panel/src/voice_agent_panel/*" = ["D105", "D106", "RUF012"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.13"
+files = [
+    "src",
+    "packages/core/src",
+    "packages/panel/src",
+    "packages/telefonia/src",
+    "packages/botones/src",
+    "tests",
+]
+strict = true
+# Las librerías del ecosistema de voz/ML no publican stubs completos.
+[[tool.mypy.overrides]]
+module = [
+    "pyaudio.*", "chromadb.*", "fastembed.*", "pipecat.*", "pypdf.*",
+    "faster_whisper.*", "piper.*", "soxr.*",
+    # La interfaz de llamada por navegador (compuerta G4 del reto).
+    "aiortc.*", "pipecat_ai_small_webrtc_prebuilt.*",
+    # El panel: django-stubs quedaría fuera a propósito (arrastra un plugin de
+    # mypy y su propia configuración, y --strict ya es bastante exigente aquí).
+    "django.*", "jeepney.*", "whitenoise.*", "mcp.*", "uvicorn.*",
+    # El puente de telefonía.
+    "dbus_fast.*",
+]
+ignore_missing_imports = true
+
+# En los tests se relaja la exigencia de anotar cada función. Un test de pytest
+# siempre devuelve None y sus parámetros son fixtures: anotarlo todo añade ruido
+# sin aportar seguridad, y aquí lo que importa es que el código de `src` esté
+# bien tipado.
+# Las migraciones las genera Django y no están anotadas.
+[[tool.mypy.overrides]]
+module = ["voice_agent_panel.migrations.*"]
+ignore_errors = true
+
+# Django no publica anotaciones y aquí se ha decidido no usar django-stubs (ver
+# el comentario de ignore_missing_imports), así que sus clases y decoradores
+# llegan como `Any`. Estas tres reglas son consecuencia directa de eso y no de
+# código flojo: heredar de `forms.ModelForm`, devolver lo que devuelve
+# `super().clean()` o decorar una vista con `@require_POST` serían errores
+# imposibles de evitar sin stubs. Todo lo demás de --strict sigue aplicando.
+[[tool.mypy.overrides]]
+module = ["voice_agent_panel.*"]
+disallow_subclassing_any = false
+disallow_untyped_decorators = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_untyped_decorators = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+DJANGO_SETTINGS_MODULE = "voice_agent_panel.settings"
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers"

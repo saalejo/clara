@@ -1,0 +1,37 @@
+[project]
+name = "voice-agent-core"
+version = "0.1.0"
+description = "Configuración y modelos compartidos entre el agente de voz y su panel de control"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+
+# La lista de dependencias es corta a propósito, y es lo que hace posible que el
+# panel viva en una imagen de ~200 MB en vez de arrastrar el 1,1 GB de Pipecat,
+# chromadb y fastembed que necesita el agente. `tests/test_core_liviano.py`
+# vigila que nadie meta aquí un import pesado por descuido.
+dependencies = [
+    # Configuración tipada y validada a partir de variables de entorno.
+    "pydantic-settings>=2.7,<3",
+    # Logging estructurado. Python puro y unos pocos cientos de kilobytes; se
+    # incluye para que el core registre igual que el resto del proyecto.
+    "loguru>=0.7,<0.8",
+
+    # Cliente de D-Bus en Python puro: sin libdbus, sin GObject y sin paquetes de
+    # sistema en la imagen. Lo usa `voice_agent_core.systemd`, que comparten el
+    # panel (para arrancar y parar el agente desde el navegador) y el mando físico
+    # de la tarjeta de sonido (para lo mismo desde un botón).
+    #
+    # Son 49 KB sin dependencias transitivas, así que no rompe la promesa de esta
+    # lista. Lo que sí se vigila es que NINGÚN otro módulo de `core` lo importe:
+    # `tests/test_core_liviano.py` comprueba que quien no pida `systemd`
+    # explícitamente no lo pague.
+    "jeepney>=0.9,<1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_agent_core"]

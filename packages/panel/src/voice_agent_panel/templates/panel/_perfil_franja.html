@@ -1,0 +1,10 @@
+{% if perfil_en_edicion %}
+{% if perfil_activo and perfil_en_edicion.pk != perfil_activo.pk %}
+<div class="aviso warning">Editando el perfil «{{ perfil_en_edicion.nombre }}», que
+  <strong>no es el activo</strong> ({{ perfil_activo.nombre }}): lo que guardes aquí no se
+  desplegará hasta que lo actives en <a href="{% url 'perfiles' %}">Perfiles</a>.</div>
+{% else %}
+<p class="ayuda">Editando el perfil «{{ perfil_en_edicion.nombre }}»{% if perfil_en_edicion.activo %} (activo){% endif %}.
+  Se cambia en <a href="{% url 'perfiles' %}">Perfiles</a>.</p>
+{% endif %}
+{% endif %}

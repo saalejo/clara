@@ -1,0 +1,18 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Logs del agente</h1>
+<p class="pie">Se leen de <code>{{ ruta }}</code>, que el agente escribe en el
+  volumen compartido. El journal del sistema no es accesible desde este contenedor.</p>
+<div id="consola">{% for l in ultimas %}{{ l }}
+{% endfor %}</div>
+<script>
+  const consola = document.getElementById("consola");
+  consola.scrollTop = consola.scrollHeight;
+  const flujo = new EventSource("{% url 'logs_stream' %}");
+  flujo.onmessage = (e) => {
+    const pegado = consola.scrollTop + consola.clientHeight >= consola.scrollHeight - 40;
+    consola.textContent += e.data + "\n";
+    if (pegado) consola.scrollTop = consola.scrollHeight;
+  };
+</script>
+{% endblock %}

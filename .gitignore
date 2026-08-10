@@ -1,0 +1,23 @@
+# Secretos: nunca versionar. Las plantillas son .env.example y .env.panel.example
+.env
+# Lleva la clave secreta de Django y la contraseña del panel.
+.env.panel
+.env.telefonia
+
+# Estáticos recogidos por collectstatic; se generan al construir la imagen.
+packages/panel/src/voice_agent_panel/staticfiles/
+
+# Datos generados en tiempo de ejecución: índice de Chroma y modelos descargados
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+
+# Artefactos de audio de las pruebas manuales
+*.wav

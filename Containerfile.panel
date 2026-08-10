@@ -1,0 +1,89 @@
+# Imagen del panel de control, separada de la del agente y a propósito.
+#
+# POR QUÉ DOS IMÁGENES
+# --------------------
+# La del agente pesa 1,7 GB y tarda unos diez minutos en construirse: arrastra
+# Pipecat con llvmlite, scipy, PyAV y CTranslate2, más el compilador que PyAudio
+# necesita porque no publica ruedas. Meter aquí el panel significaría pagar esos
+# diez minutos cada vez que se toca una plantilla o una hoja de estilo.
+#
+# El panel no necesita nada de eso. Depende de `voice-agent-core` —config,
+# modelos y lectura de /proc, sin una sola dependencia pesada— y de Django, que
+# es Python puro. La imagen ronda los 200 MB y se reconstruye en un par de
+# minutos.
+#
+# Lo que hace posible la separación es `uv sync --package`: instala solo las
+# dependencias del paquete que se le diga. Aquí Pipecat y chromadb no llegan a
+# descargarse, así que el panel **no puede** importarlos aunque alguien lo
+# intente por descuido. `tests/test_core_liviano.py` guarda la otra mitad del
+# trato, comprobando que `voice_agent_core` no se vuelva pesado.
+
+FROM docker.io/library/python:3.13-slim-trixie
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Sin `build-essential` ni cabeceras de desarrollo: aquí no se compila nada.
+# Django, whitenoise, jeepney, uvicorn y mcp son Python puro, y pydantic-core
+# publica rueda para aarch64. Es la mitad de la diferencia de tamaño con la
+# imagen del agente.
+WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# Igual que en la imagen del agente: primero los manifiestos, para que la capa
+# de dependencias solo se invalide cuando cambien de verdad. Hacen falta los de
+# los cuatro paquetes porque uv resuelve el workspace entero contra un uv.lock
+# único, aunque luego solo se instale el del panel.
+COPY pyproject.toml uv.lock ./
+COPY packages/core/pyproject.toml packages/core/README.md ./packages/core/
+COPY packages/panel/pyproject.toml packages/panel/README.md ./packages/panel/
+# El puente de telefonía y el demonio de botones corren nativos y NO se instalan
+# en esta imagen, pero sus manifiestos tienen que estar: uv resuelve el workspace
+# entero contra un único uv.lock y falla si le falta un miembro que el lock
+# menciona. El error habla del workspace y no menciona qué paquete falta, así que
+# es caro de diagnosticar.
+COPY packages/telefonia/pyproject.toml packages/telefonia/README.md ./packages/telefonia/
+COPY packages/botones/pyproject.toml packages/botones/README.md ./packages/botones/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --package voice-agent-panel --no-install-workspace
+
+COPY packages/core/src ./packages/core/src
+COPY packages/panel/src ./packages/panel/src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --package voice-agent-panel
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DJANGO_SETTINGS_MODULE=voice_agent_panel.settings \
+    PANEL_STATIC_ROOT=/app/static \
+    DATA_DIR=/data \
+    CORPUS_DIR=/corpus \
+    PANEL_HOST=0.0.0.0
+
+# Los estáticos se recogen al construir y no al arrancar: así el arranque es
+# instantáneo y no hay que darle permiso de escritura a ninguna ruta de la
+# imagen. La clave de aquí es de mentira y solo vive durante este comando; la de
+# verdad llega por .env.panel al ejecutar.
+#
+# Recogerlos aquí es además lo que activa el almacenamiento con manifiesto: el
+# módulo de configuración lo elige según exista `staticfiles.json`.
+RUN DJANGO_SECRET_KEY=solo-para-construir PANEL_SECRET_KEY=solo-para-construir \
+    python -m django collectstatic --noinput --clear
+
+# Red de seguridad de la separación: si alguien mete un import pesado en
+# `voice_agent_core`, la construcción falla aquí en vez de descubrirse cuando la
+# imagen ya pesa 1,3 GB o cuando el panel se cae al arrancar.
+RUN PANEL_SECRET_KEY=solo-para-construir \
+    python -c "import voice_agent_core.config, voice_agent_panel.settings; print('imports del panel OK')" \
+    && python -c "import importlib.util, sys; \
+       pesados = [m for m in ('pipecat','chromadb','fastembed') if importlib.util.find_spec(m)]; \
+       sys.exit(f'Dependencias pesadas en la imagen del panel: {pesados}') if pesados else None"
+
+# /corpus se monta en escritura: la página de Conocimiento crea y borra temas y
+# documentos. Es el único sitio donde el panel toca ficheros que no son suyos.
+VOLUME ["/data", "/corpus"]
+EXPOSE 8080
+
+CMD ["python", "-m", "voice_agent_panel"]

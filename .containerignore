@@ -1,0 +1,15 @@
+# Lo que NO debe entrar en el contexto de construcción de la imagen.
+# `data/` es lo importante: son más de mil megabytes de modelos descargados y
+# el índice de Chroma. Va montado como volumen, nunca dentro de la imagen.
+data/
+.venv/
+.git/
+.env
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.wav
+docs/
+tests/

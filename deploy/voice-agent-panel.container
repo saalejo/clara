@@ -1,0 +1,107 @@
+# Unidad Quadlet del panel de control.
+#
+# Instalación (`make install-panel` lo hace por ti):
+#
+#     cp deploy/voice-agent-panel.container ~/.config/containers/systemd/
+#     systemctl --user daemon-reload
+#     systemctl --user start voice-agent-panel
+#
+# Se llega con un túnel: ssh -L 8080:localhost:8080 nanopi
+# y luego http://localhost:8080/panel/
+
+[Unit]
+Description=Panel de configuración del agente de voz
+Documentation=file://@@PROJECT_DIR@@/packages/panel/README.md
+# El panel funciona con el agente parado —de hecho sirve para arrancarlo—, así
+# que solo se pide orden, no dependencia.
+After=voice-agent.service
+
+[Container]
+Image=localhost/voice-agent-panel:latest
+ContainerName=voice-agent-panel
+
+# --- Control del servicio por D-Bus -------------------------------------------
+# El panel gobierna el agente hablando con systemd por el bus de sesión, no por
+# la API de Podman. El motivo está en packages/panel/src/voice_agent_panel/control.py:
+# la unidad del agente la genera Quadlet con `--rm` y un ExecStopPost que hace
+# `podman rm -f`, así que un reinicio por la API destruiría el contenedor recién
+# rearrancado.
+#
+# `%t` es /run/user/1000 en una unidad de usuario.
+Volume=%t/bus:/run/user/host/bus
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/host/bus
+
+# --userns=keep-id NO es opcional. La autenticación EXTERNAL de D-Bus manda el
+# uid que el cliente cree tener y el servidor lo contrasta con SO_PEERCRED; en un
+# contenedor rootless por defecto el proceso es uid 0 dentro pero el kernel
+# reporta 1000 fuera, y el bus responde REJECTED EXTERNAL. Medido en la placa:
+# sin keep-id rechaza, con keep-id acepta. De paso, deja con el dueño correcto
+# los ficheros que el panel escribe en /data.
+#
+# 256 MB bastan: Django con uvicorn y SQLite ronda los 120 MB. Lo caro —la
+# reindexación del RAG— corre en su propia unidad, no aquí.
+PodmanArgs=--userns=keep-id --memory=256m
+
+# NO lleva /dev/snd, ni keep-groups, ni --ipc=host. Dos contenedores abriendo la
+# tarjeta de sonido es exactamente el bug de "dispositivo ocupado" que este
+# proyecto ya peleó una vez.
+
+# Solo loopback. Quien entre en el panel puede ejecutar comandos en la placa, así
+# que se llega por túnel SSH y no se publica en la red.
+PublishPort=127.0.0.1:8080:8080
+
+# --- Configuración y datos ----------------------------------------------------
+# Su propio fichero de entorno, NO el del agente. Es la tercera capa que impide
+# que el panel vea las claves de OpenRouter y Deepgram: sencillamente no las
+# tiene montadas.
+EnvironmentFile=@@PROJECT_DIR@@/.env.panel
+
+# Estas dos van DESPUÉS del EnvironmentFile y le ganan a propósito, por la misma
+# razón que en la unidad del agente: `EnvironmentFile` pisa el `ENV` de la
+# imagen, así que un valor pensado para ejecutar en local se cuela dentro del
+# contenedor.
+#
+# Con PANEL_HOST el síntoma es especialmente desconcertante: el servicio arranca,
+# `systemctl` lo da por activo, los logs no dicen nada raro... y el puerto
+# publicado no contesta, porque uvicorn está escuchando en el loopback *del
+# contenedor*. El aislamiento sigue siendo el mismo: quien restringe el acceso a
+# la máquina es `PublishPort=127.0.0.1:8080`, no esto.
+Environment=DATA_DIR=/data
+Environment=PANEL_HOST=0.0.0.0
+
+# La misma zona horaria que el agente: la vista previa de "próximas
+# ejecuciones" del formulario de tareas calcula con el mismo reloj que el
+# planificador que las disparará.
+Environment=TZ=America/Bogota
+
+# El corpus del RAG, y va aquí abajo por la misma razón que las dos de arriba.
+#
+# Es el ÚNICO volumen que el panel monta en ESCRITURA además de /data: desde la
+# página de Conocimiento se crean y borran temas (carpetas) y documentos. El
+# agente y la unidad de ingesta lo montan `:ro`, y esa asimetría es intencionada
+# — el panel es quien lo edita, ellos solo lo leen.
+#
+# Con `--userns=keep-id` lo que escriba el panel queda con uid 1000 en el
+# anfitrión, el mismo usuario que ejecuta `make ingest`, así que no hay
+# desajustes de permisos entre lo subido por el navegador y lo copiado por SSH.
+Environment=CORPUS_DIR=/corpus
+Volume=@@PROJECT_DIR@@/corpus:/corpus:Z
+
+# El volumen compartido con el agente: por ahí viajan la configuración que el
+# panel escribe, el estado que el agente publica y el log que el panel sigue.
+Volume=@@PROJECT_DIR@@/data:/data:Z
+
+[Service]
+Restart=on-failure
+RestartSec=10
+# El primer arranque con `--userns=keep-id` no es instantáneo: Podman tiene que
+# crear una copia de las capas de la imagen con los uid remapeados, y en esta
+# placa eso pasa de los 90 segundos que systemd da por defecto. El síntoma es un
+# "Job for voice-agent-panel.service failed because a timeout was exceeded" y un
+# aviso de "Found incomplete layer" en el siguiente intento, que es la copia a
+# medias limpiándose. Los arranques siguientes reutilizan el remapeo y tardan
+# unos segundos.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

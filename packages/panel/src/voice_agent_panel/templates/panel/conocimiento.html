@@ -1,0 +1,111 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Base de conocimiento{% endblock %}
+{% block contenido %}
+<h1>Base de conocimiento</h1>
+<p class="pie">Un <strong>tema</strong> es una subcarpeta de <code>{{ corpus_dir }}</code> y tiene
+  su propia colección en el índice. Subir o borrar aquí no cambia nada por sí solo:
+  hay que reindexar para que el agente lo aprenda.</p>
+
+<h2>Estado del índice</h2>
+<div class="tarjeta">
+  {% if indice.reindexando %}
+    <p class="estado activo">reindexando ahora</p>
+    <p class="ayuda">Tarda un rato según el tamaño del corpus. Recarga la página para ver cómo acaba.</p>
+  {% elif indice.fallo %}
+    <p class="estado fallido">la última reindexación falló</p>
+    <p class="ayuda">El agente sigue con el índice anterior. Mira los logs de
+      <code>voice-agent-ingest</code> para saber por qué.</p>
+  {% elif indice.hay_cambios %}
+    <p class="estado fallido">falta reindexar</p>
+    <p class="ayuda">El corpus ha cambiado desde la última reindexación
+      ({{ indice.ultimo.creado_en|date:"d/m/Y H:i" }}).</p>
+  {% elif indice.sin_constancia %}
+    <p class="estado parado">sin constancia</p>
+    <p class="ayuda">El panel no ha reindexado nunca; lo normal si el índice se construyó
+      con <code>make ingest</code>. Si has cambiado el corpus, reindexa.</p>
+  {% else %}
+    <p class="estado activo">al día</p>
+    <p class="ayuda">Última reindexación: {{ indice.ultimo.creado_en|date:"d/m/Y H:i" }}.</p>
+  {% endif %}
+
+  <div class="acciones">
+    <form method="post" action="{% url 'servicio' 'ingesta' %}">{% csrf_token %}
+      <input type="hidden" name="volver" value="conocimiento">
+      <button class="principal" type="submit" {% if indice.reindexando %}disabled{% endif %}>
+        Reindexar</button></form>
+  </div>
+  <p class="ayuda">Reindexar reconcilia cada tema con su carpeta: añade lo nuevo, olvida lo
+    borrado y elimina las colecciones de los temas que ya no existen. El agente lo recoge
+    sin reiniciarse.</p>
+</div>
+
+<h2>Temas</h2>
+<div class="tarjeta">
+  <form method="post" action="{% url 'tema_crear' %}">{% csrf_token %}
+    {% for campo in form_tema %}{% include "panel/_campo.html" with campo=campo %}{% endfor %}
+    <div class="acciones"><button type="submit">Crear tema</button></div>
+  </form>
+</div>
+
+{% for tema in temas %}
+<h2>{% if tema.es_raiz %}Sin tema <span class="ayuda">(sueltos en la raíz del corpus)</span>
+    {% else %}{{ tema.nombre }}{% endif %}</h2>
+<div class="tarjeta">
+  <table>
+    <tr><th>Documento</th><th>Tamaño</th><th>Modificado</th><th></th></tr>
+    {% for d in tema.documentos %}
+    <tr>
+      <td><code>{{ d.nombre }}</code></td>
+      <td>{{ d.tamano_bytes|filesizeformat }}</td>
+      <td>{{ d.modificado_en|date:"d/m/Y H:i" }}</td>
+      <td>
+        <form method="post" action="{% url 'documento_borrar' %}">{% csrf_token %}
+          <input type="hidden" name="tema" value="{{ tema.nombre }}">
+          <input type="hidden" name="nombre" value="{{ d.nombre }}">
+          <button class="peligro" type="submit">Borrar</button></form>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" class="ayuda">Ningún documento.</td></tr>
+    {% endfor %}
+  </table>
+
+  <form method="post" enctype="multipart/form-data" action="{% url 'conocimiento' %}">
+    {% csrf_token %}
+    <input type="hidden" name="tema" value="{{ tema.nombre }}">
+    <label for="archivo-{{ forloop.counter }}">Subir documento</label>
+    <input type="file" name="archivo" id="archivo-{{ forloop.counter }}"
+           accept=".md,.markdown,.txt,.pdf">
+    <div class="acciones"><button type="submit">Subir</button></div>
+  </form>
+
+  {% if not tema.es_raiz %}
+    {% if tema.documentos %}
+    <p class="ayuda">Para borrar el tema, borra antes sus documentos.</p>
+    {% else %}
+    <div class="acciones">
+      <form method="post" action="{% url 'tema_borrar' %}">{% csrf_token %}
+        <input type="hidden" name="tema" value="{{ tema.nombre }}">
+        <button class="peligro" type="submit">Borrar tema</button></form>
+    </div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if form_documento.errors %}
+<div class="aviso error">{{ form_documento.errors }}</div>
+{% endif %}
+
+{% if ignorados %}
+<h2>Fuera del índice</h2>
+<div class="tarjeta">
+  <p class="pie">Estos documentos están a más de un nivel de profundidad, y los temas son un
+    solo nivel de subcarpetas. Ni se indexan ni se pueden gestionar desde aquí: muévelos a
+    un tema por SSH.</p>
+  <ul>{% for r in ignorados %}<li><code>{{ r }}</code></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<p class="ayuda" style="margin-top:1.5rem">Se admiten {{ extensiones }}.</p>
+{% endblock %}

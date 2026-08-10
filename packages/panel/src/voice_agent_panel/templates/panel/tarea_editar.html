@@ -1,0 +1,50 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>{% if tarea.pk %}{{ tarea.titulo|default:tarea.nombre }}{% else %}Tarea nueva{% endif %}</h1>
+<p class="pie">La misión es un encargo para el modelo, no un guion palabra por
+  palabra: él decide cómo decirlo. En una tarea de llamada, el número se marca
+  tal cual quedó guardado aquí — búscalo en la agenda del móvil o tecléalo con
+  prefijo.</p>
+<form method="post" class="tarjeta">
+  {% csrf_token %}
+  {% if form.non_field_errors %}<p class="errores">{{ form.non_field_errors|join:" " }}</p>{% endif %}
+  {% include "panel/_campo.html" with campo=form.nombre %}
+  {% include "panel/_campo.html" with campo=form.titulo %}
+  {% include "panel/_campo.html" with campo=form.tipo %}
+  {% include "panel/_campo.html" with campo=form.cron %}
+  {% if form.proximas %}
+  <div class="aviso">Próximas ejecuciones:
+    {% for p in form.proximas %}<code>{{ p|date:"D d/m H:i" }}</code>{% if not forloop.last %} · {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  {% include "panel/_campo.html" with campo=form.mision %}
+  {% include "panel/_campo.html" with campo=form.guardar_respuestas %}
+
+  <h2>Contacto (solo tareas de llamada)</h2>
+  {% include "panel/_campo.html" with campo=form.contacto_nombre %}
+  <div class="acciones">
+    <button type="submit" name="accion" value="buscar_contacto">Buscar en la agenda</button>
+  </div>
+  {% if candidatos %}
+  <table>
+    <tr><th></th><th>Contacto</th><th>Número</th><th>Parecido</th></tr>
+    {% for c in candidatos %}
+    <tr>
+      {# Elegir rellena los campos sin viaje al servidor: son inputs del mismo formulario. #}
+      <td><button type="button"
+                  onclick="document.getElementById('{{ form.contacto_nombre.id_for_label }}').value='{{ c.nombre|escapejs }}';
+                           document.getElementById('{{ form.contacto_numero.id_for_label }}').value='{{ c.numero|escapejs }}';">
+          Elegir</button></td>
+      <td>{{ c.nombre }}</td><td><code>{{ c.numero }}</code></td><td>{{ c.puntuacion }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% include "panel/_campo.html" with campo=form.contacto_numero %}
+
+  <div class="acciones">
+    <button class="principal" type="submit">Guardar</button>
+    <a class="boton" href="{% url 'tareas' %}">Cancelar</a>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,88 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Estado</h1>
+
+{% for aviso in avisos %}<div class="aviso warning">{{ aviso }}</div>{% endfor %}
+
+<div class="rejilla">
+  <div class="tarjeta">
+    <h2 style="margin-top:0">Servicio</h2>
+    {% if servicio %}
+      <p class="estado {% if servicio.activo %}activo{% elif servicio.fallido %}fallido{% else %}parado{% endif %}">
+        {{ servicio.legible }}</p>
+      <p class="ayuda">{{ servicio.unidad }} · {{ servicio.active_state }}/{{ servicio.sub_state }}</p>
+    {% else %}
+      <p class="estado fallido">sin contacto</p>
+      <p class="ayuda">{{ error_servicio }}</p>
+    {% endif %}
+  </div>
+
+  <div class="tarjeta">
+    <h2 style="margin-top:0">Placa</h2>
+    {% for zona, grados in placa.temperaturas_celsius.items %}
+      <p style="margin:.2rem 0">{{ zona }}: <strong>{{ grados }} °C</strong></p>
+    {% endfor %}
+    <p style="margin:.2rem 0">Memoria: <strong>{{ placa.memoria.usada_gb }}</strong> / {{ placa.memoria.total_gb }} GB</p>
+    <p style="margin:.2rem 0">Carga: {{ placa.carga_media.1_min }} · {{ placa.carga_media.5_min }} · {{ placa.carga_media.15_min }}</p>
+    <p class="ayuda">Encendida hace {{ placa.tiempo_encendida }}</p>
+  </div>
+
+  <div class="tarjeta">
+    <h2 style="margin-top:0">Último arranque</h2>
+    {% if arranque %}
+      <p style="margin:.2rem 0">{{ arranque.herramientas|length }} herramienta(s)</p>
+      <p style="margin:.2rem 0">{{ arranque.hooks_activos|length }} hook(s) activo(s)</p>
+      <p style="margin:.2rem 0">{{ arranque.mcp|length }} servidor(es) MCP</p>
+      <p class="ayuda">{{ arranque.generado_en }}</p>
+    {% else %}
+      <p class="ayuda">El agente todavía no ha publicado su estado. Arráncalo al menos una vez.</p>
+    {% endif %}
+  </div>
+</div>
+
+<h2>Aplicar la configuración</h2>
+<div class="tarjeta">
+  <p class="pie">Guardar en el panel no cambia nada por sí solo: hay que exportar la
+    configuración y reiniciar el agente para que la tome. Tarda unos veinte segundos.</p>
+  {% if perfil_activo %}
+  <p style="margin:.2rem 0">Perfil activo: <strong>{{ perfil_activo.nombre }}</strong></p>
+  {% endif %}
+  <div class="acciones">
+    <form method="post" action="{% url 'desplegar' %}">{% csrf_token %}
+      <button class="principal" type="submit">Desplegar y reiniciar</button></form>
+    <form method="post" action="{% url 'desplegar' %}">{% csrf_token %}
+      <input type="hidden" name="reiniciar" value="no">
+      <button type="submit">Solo exportar</button></form>
+  </div>
+</div>
+
+<h2>Servicio</h2>
+<div class="tarjeta">
+  <div class="acciones">
+    <form method="post" action="{% url 'servicio' 'arrancar' %}">{% csrf_token %}
+      <button type="submit" {% if servicio.activo %}disabled{% endif %}>Arrancar</button></form>
+    <form method="post" action="{% url 'servicio' 'parar' %}">{% csrf_token %}
+      <button type="submit" {% if not servicio.activo %}disabled{% endif %}>Parar</button></form>
+    <form method="post" action="{% url 'servicio' 'reiniciar' %}">{% csrf_token %}
+      <button type="submit">Reiniciar</button></form>
+    <form method="post" action="{% url 'servicio' 'ingesta' %}">{% csrf_token %}
+      <button type="submit" {% if indice.reindexando %}disabled{% endif %}>
+        Reindexar la base de conocimiento</button></form>
+  </div>
+  <p class="ayuda">Reindexar reconcilia el índice con <code>corpus/</code>: añade lo nuevo y
+    olvida lo borrado. El agente lo recoge sin reiniciarse. Los temas y documentos se
+    gestionan en <a href="{% url 'conocimiento' %}">Conocimiento</a>.</p>
+</div>
+
+{% if ultimos_despliegues %}
+<h2>Últimos despliegues</h2>
+<table>
+  <tr><th>Cuándo</th><th>Resultado</th><th>Quién</th><th></th></tr>
+  {% for d in ultimos_despliegues %}
+  <tr><td>{{ d.creado_en|date:"d/m/Y H:i" }}</td><td>{{ d.get_resultado_display }}</td>
+      <td>{{ d.autor|default:"—" }}</td>
+      <td><a href="{% url 'despliegue_detalle' d.pk %}">ver lo enviado</a></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

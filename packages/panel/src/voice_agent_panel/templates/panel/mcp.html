@@ -1,0 +1,49 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Servidores MCP</h1>
+<p class="pie">Cada servidor aporta sus herramientas al modelo. Uno que falle no
+  impide arrancar al agente: se anota y se sigue. La definición es común a todos
+  los perfiles; la casilla dice si <em>este</em> perfil lo usa.</p>
+{% include "panel/_perfil_franja.html" %}
+<div class="acciones"><a class="boton" href="{% url 'mcp_nuevo' %}">Añadir servidor</a></div>
+
+{# Los botones de sondear y borrar apuntan con el atributo form a formularios #}
+{# declarados fuera de la tabla: anidar formularios es HTML inválido. #}
+<form method="post" id="seleccion-mcp">{% csrf_token %}</form>
+{% for s in servidores %}
+<form method="post" action="{% url 'mcp_sondear' s.obj.pk %}" id="sondear-{{ s.obj.pk }}">{% csrf_token %}</form>
+<form method="post" action="{% url 'mcp_borrar' s.obj.pk %}" id="borrar-{{ s.obj.pk }}">{% csrf_token %}</form>
+{% endfor %}
+
+<table style="margin-top:1rem">
+  <tr><th>Habilitado</th><th>Nombre</th><th>Transporte</th><th>Último arranque</th><th></th></tr>
+  {% for s in servidores %}
+  <tr>
+    <td><input type="checkbox" form="seleccion-mcp" name="habilitado" value="{{ s.obj.pk }}"
+               {% if s.habilitado %}checked{% endif %}></td>
+    <td><a href="{% url 'mcp_editar' s.obj.pk %}">{{ s.obj.nombre }}</a>
+      {% if s.obj.herramientas_descubiertas %}
+        <p class="ayuda">sondeado: {{ s.obj.herramientas_descubiertas|join:", " }}</p>{% endif %}
+      {% if s.obj.ultimo_error %}<p class="errores">{{ s.obj.ultimo_error|truncatechars:120 }}</p>{% endif %}</td>
+    <td>{{ s.obj.transporte }}</td>
+    <td>{% if s.arranque %}
+        {% if s.arranque.conectado %}<span class="estado activo">conectado</span>
+          <p class="ayuda">{{ s.arranque.herramientas|join:", " }}</p>
+        {% else %}<span class="estado fallido">falló</span>
+          <p class="ayuda">{{ s.arranque.error|truncatechars:120 }}</p>{% endif %}
+      {% else %}—{% endif %}</td>
+    <td>
+      <button type="submit" form="sondear-{{ s.obj.pk }}">Sondear</button>
+      <button class="peligro" type="submit" form="borrar-{{ s.obj.pk }}">Borrar</button>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="ayuda">Ninguno configurado.</td></tr>
+  {% endfor %}
+</table>
+{% if servidores %}
+<div class="acciones">
+  <button class="principal" type="submit" form="seleccion-mcp">Guardar selección</button>
+</div>
+{% endif %}
+{% endblock %}

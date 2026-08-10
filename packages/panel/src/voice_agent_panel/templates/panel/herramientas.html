@@ -1,0 +1,32 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Herramientas</h1>
+{% if arranque %}
+<p class="pie">Esto es lo que el agente tenía cargado en su último arranque
+  ({{ arranque.generado_en }}), no lo que dice esta base de datos. Desactivar una
+  hace que el modelo ni siquiera sepa que existe. El interruptor es por perfil:
+  sin guardar aquí, un perfil nuevo las tiene todas activas.</p>
+{% include "panel/_perfil_franja.html" %}
+
+<form method="post">
+  {% csrf_token %}
+  <table>
+    <tr><th>Activa</th><th>Nombre</th><th>Origen</th><th>Descripción</th></tr>
+    {% for f in filas %}
+    <tr>
+      <td><input type="checkbox" name="activa" value="{{ f.nombre }}" {% if f.habilitada %}checked{% endif %}></td>
+      <td><code>{{ f.nombre }}</code></td>
+      <td>{{ f.origen }}</td>
+      <td>{{ f.descripcion|truncatechars:160 }}
+        <details><summary class="ayuda">ver el esquema que ve el modelo</summary>
+          <pre>{{ f.esquema }}</pre></details></td>
+    </tr>
+    {% endfor %}
+  </table>
+  <div class="acciones"><button class="principal" type="submit">Guardar</button></div>
+</form>
+{% else %}
+<p class="pie">El agente todavía no ha publicado qué herramientas tiene. Arráncalo
+  al menos una vez y vuelve.</p>
+{% endif %}
+{% endblock %}
