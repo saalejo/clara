@@ -1,165 +1,179 @@
-# Agente de voz — NanoPi R4S
+# Clara — agente de voz para seguimiento postoperatorio
 
-Agente conversacional por voz en español sobre una placa de 40 €: escucha por el
-micrófono, razona con un LLM, consulta una base de conocimiento propia y
-responde hablando. Proyecto **de aprendizaje**, con cada decisión medida y
-documentada —incluidas las que salieron mal.
+Solución al [reto Clara 2026](https://github.com/Clara2026/ParticipantArtifacts):
+una asistente virtual de enfermería que llama —por navegador— a pacientes recién
+operados en Colombia, conversa en español en tiempo real, responde con base en
+un corpus clínico indexado (RAG con conocimiento vivo), clasifica cada caso en
+un triaje verde/amarillo/rojo, persiste una alerta estructurada cuando decide
+escalar y deja un resumen trazable de cada llamada.
 
-```mermaid
-flowchart LR
-    MIC([Micrófono]) --> VAD[Silero VAD]
-    VAD --> STT[Whisper local<br/>o Deepgram]
-    STT --> LLM[LLM vía<br/>OpenRouter]
-    LLM <-.-> T[[Herramientas]]
-    T <-.-> RAG[(ChromaDB)]
-    LLM --> TTS[Piper<br/><i>local</i>]
-    TTS --> SPK([Altavoz])
-```
+Corre completa en una placa ARM (NanoPi R4S, 4 GB de RAM, sin GPU), expuesta al
+jurado mediante un túnel de Cloudflare.
 
-Salvo el LLM, todo corre en la placa: transcripción, síntesis, detección de voz
-y base de conocimiento.
+## Acceso rápido para el jurado (≤ 15 minutos)
 
-## Qué hace
+No hay nada que instalar: la solución ya está corriendo en la placa y se accede
+por el navegador. Se recomienda **usar auriculares** para la llamada.
 
-- **Conversa** en español por el micrófono y el altavoz del equipo.
-- **Consulta documentos**: subes ficheros desde el navegador —agrupados por
-  temas—, los indexas, y los consulta cuando vienen al caso. Si no encuentra nada
-  relevante, lo dice en vez de inventárselo.
-- **Usa herramientas**: además del RAG, sabe la fecha y la hora reales y lee la
-  temperatura, la memoria y la carga de la propia placa.
-- **Avisa mientras piensa**: suelta un «déjame consultarlo» pregrabado a los
-  82 ms de decidir que va a buscar, en lugar de dejarte en silencio.
-
-## Arranque
-
-Requisitos: NanoPi R4S (o similar aarch64) con Armbian/Debian, un adaptador de
-audio USB y una clave de [OpenRouter](https://openrouter.ai/keys).
-
-```bash
-sudo apt install -y portaudio19-dev libportaudio2 python3-dev build-essential
-sudo cp deploy/asound.conf /etc/asound.conf     # imprescindible, ver docs/audio.md
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-cp .env.example .env && $EDITOR .env            # pon tu OPENROUTER_API_KEY
-make install
-make audio-check                                # valida el audio ANTES de nada
-make models && make ingest
-make run
-```
-
-Si `make audio-check` falla, para y lee [`docs/audio.md`](docs/audio.md). En esta
-placa el audio es la parte delicada.
-
-## Comandos
-
-```
-make run              arranca el agente          make lint             ruff + mypy
-make audio-check      diagnostica el audio       make test             788 tests
-make audio-noise      localiza zumbidos          make build            imagen del agente
-make ask Q="..."      consulta el RAG sin voz    make install-service  servicio systemd
-make ingest           reindexa corpus/           make service-logs     logs del servicio
-
-make panel            panel web en local         make build-panel      imagen del panel
-make panel-export     exporta la configuración   make install-panel    unidades del panel
-
-make botones          el mando físico en local   make botones-sonda    qué gesto ve el mando
-make botones-pitidos  afina los pitidos de oído  make install-botones  servicio del mando
-```
-
-## Panel de control
-
-Casi todo lo de abajo se puede tocar desde el navegador, sin editar ficheros:
-prompt del sistema, personalidad, ajustes, qué herramientas ve el modelo, qué
-servidores MCP se conectan, qué hooks se disparan, los temas y documentos de la
-base de conocimiento, y el arranque y parada del servicio.
-
-```bash
-ssh -L 8080:localhost:8080 nanopi     # y luego http://localhost:8080/panel/
-```
-
-Guardar no cambia nada por sí solo: hay que desplegar, lo que exporta la
-configuración y reinicia el agente (~20 s). Los documentos van por su propio
-camino —subir y reindexar—, y eso el agente sí lo recoge sin reiniciarse. Ver
-[`docs/panel.md`](docs/panel.md).
-
-## Mando físico
-
-Los **botones de la tarjeta de sonido** controlan el agente sin túnel SSH y sin
-navegador: silenciar el micrófono, mover el volumen, contestar o colgar el
-teléfono, y arrancar, parar o reiniciar el servicio. Es la única forma de
-gobernarlo **con el agente parado**, que es cuando más falta hace.
-
-```bash
-make install-botones
-systemctl --user enable --now voice-agent-botones
-```
-
-Un clic del botón de audio silencia el micrófono; el rocker de volumen tiene tres
-niveles por duración, con un pip al cruzar cada frontera, y lo destructivo pide
-confirmación. Todo el feedback es sonoro, porque no hay pantalla. El mapa de
-gestos y las trampas del hardware —hay un botón que no emite absolutamente nada—
-están en [`docs/botones.md`](docs/botones.md).
-
-## Ajustes
-
-Todo en `.env` ([plantilla comentada](.env.example)), o desde el panel:
-
-| Variable | Para qué |
-|---|---|
-| `STT_BACKEND` | `whisper` local (gratis, 33 % de error) o `deepgram` (0 % de error, −3 s) |
-| `OPENROUTER_MODEL` | Qué LLM. Manda la latencia, no la inteligencia |
-| `AUDIO_PROFILE` | `headset` permite interrumpir; `speaker` va en semidúplex |
-| `TTS_VOICE` | Voz de Piper: España, México o Argentina |
-| `FILLER_DELAY_SECS` | Cuándo suelta un «un momento» si tarda |
-| `RAG_MAX_DISTANCE` | Cuán estricto es antes de decir «no lo sé» |
-
-## Rendimiento, sin adornos
-
-Desde que callas hasta que oyes la respuesta:
-
-| | Whisper local | Deepgram |
+| Superficie | URL | Credenciales |
 |---|---|---|
-| Latencia total | ≈ 4,8 s | **≈ 2,5 s** |
-| Error por palabra | 33,1 % | **0,0 %** |
-| Coste | 0 | por minuto |
+| **Interfaz de llamada** (hablar con Clara) | https://voz.agapanto.com.co | — |
+| **Consola de administración** (conocimiento vivo) | https://panel.agapanto.com.co/panel/ | usuario `jurado` · contraseña `Clara2026.postop` |
 
-Con Whisper local **la transcripción se lleva más de la mitad del total**: es el
-precio de hacer reconocimiento de voz en una CPU ARM sin acelerador. Las
-muletillas no bajan esa cifra, pero evitan el silencio que hace dudar de si te
-ha oído.
+Pasos:
 
-Todas las cifras están medidas en la placa
-([`docs/rendimiento.md`](docs/rendimiento.md)), incluidas tres que contradicen la
-intuición: `taskset` sobre los núcleos rápidos **no sirve de nada**, `small` es
-catorce veces más lento que `tiny` **sin acertar más**, y lo que degrada la
-transcripción no es el tamaño del modelo sino **lo corta que sea la frase**.
+1. Abrir la interfaz de llamada, pulsar **Connect** y aceptar el permiso de
+   micrófono. Clara saluda en un par de segundos; a partir de ahí es una
+   conversación normal (se puede interrumpir mientras habla).
+2. Para el conocimiento vivo: entrar a la consola → **Conocimiento** → subir un
+   PDF o Markdown al tema que se quiera → pulsar **Reindexar**. Al terminar la
+   indexación, el agente responde con el documento nuevo **sin reiniciar
+   nada**; al eliminarlo y reindexar, lo olvida.
+3. Las alertas y los resúmenes de llamada quedan en `data/evaluaciones/`
+   (véase [Triaje y trazabilidad](#triaje-y-trazabilidad)).
 
-## Documentación
+## Puesta en marcha desde cero (opcional)
 
-| | |
+Si se prefiere levantar la solución en otra máquina Linux (probado en aarch64;
+en x86_64 funciona con las mismas órdenes):
+
+```bash
+git clone <este-repositorio> && cd clara
+curl -LsSf https://astral.sh/uv/install.sh | sh   # gestor de entornos uv
+make install                                       # dependencias (uv.lock, reproducible)
+cp .env.example .env                               # rellenar GEMINI_API_KEY y DEEPGRAM_API_KEY
+cp .env.panel.example .env.panel                   # credenciales del panel
+make ingest                                        # indexa corpus/ (una vez)
+make run-web                                       # interfaz de llamada en :7860
+make panel                                         # consola en :8081 (otra terminal)
+```
+
+El micrófono del navegador exige HTTPS u `http://localhost`: para acceder desde
+otra máquina hace falta un túnel (por ejemplo `cloudflared tunnel --url
+http://localhost:7860`).
+
+## Arquitectura
+
+```
+navegador ──WebRTC (audio)──► SmallWebRTCTransport (aiortc)
+                                   │
+                     ┌─────────────┴─ pipeline Pipecat (uno por llamada) ─┐
+                     │ STT Deepgram nova-3 (es, streaming)                │
+                     │ VAD Silero + cierre de turno por silencio          │
+                     │ LLM Gemini 2.5 Flash (AI Studio, nivel gratuito)   │
+                     │   ├─ buscar_en_documentos ──► ChromaDB + fastembed │
+                     │   │      (RAG multilingüe, umbral anti-alucinación)│
+                     │   ├─ registrar_alerta ──► data/evaluaciones/alertas│
+                     │   └─ finalizar_llamada ─► data/evaluaciones/resumenes
+                     │ TTS Piper (es, local, ONNX)                        │
+                     └────────────────────────────────────────────────────┘
+consola Django ──ficheros compartidos──► corpus/ + reindexado (systemd oneshot)
+```
+
+Decisiones clave, con su porqué:
+
+- **Modelo (compuerta G3): `gemini-2.5-flash` por el endpoint OpenAI-compatible
+  de Google AI Studio, en su nivel gratuito.** Familia permitida por el reto,
+  function calling sólido y primer token rápido, que es lo que se percibe como
+  latencia en voz. Plan B conmutable por configuración (`LLM_BACKEND=groq`):
+  Llama 3.3 70B en Groq, también permitido y gratuito, por si el límite de
+  peticiones por minuto del nivel gratuito de Gemini se queda corto en la
+  sesión en vivo.
+- **STT en la nube (Deepgram nova-3) y TTS local (Piper)**: medido en esta
+  placa, Whisper local añade ~3 s de latencia y un 33 % de error por palabra;
+  Deepgram transcribe en streaming con cero errores en la misma batería de
+  pruebas. El stack de voz es libre según las reglas del reto.
+- **RAG por temas**: una colección de ChromaDB por carpeta de `corpus/`
+  (apendicitis, colecistitis, cáncer colorrectal, cáncer de mama, reemplazo
+  articular). Embeddings multilingües (MiniLM-L12-v2 por ONNX) porque el corpus
+  mezcla español e inglés y las preguntas llegan en español. Los pasajes por
+  encima del umbral de distancia se descartan y el agente dice "no lo sé" en
+  vez de improvisar.
+- **Conocimiento vivo sin reinicios**: el buscador relee la lista de
+  colecciones en cada consulta, así que subir un documento y reindexar lo hace
+  aparecer en caliente; la ingesta es reconciliadora (ids derivados del
+  contenido), de modo que borrar un documento y reindexar lo hace desaparecer.
+- **Un pipeline por llamada con servicios precargados**: los procesadores de
+  Pipecat pertenecen a un pipeline; el juego STT/LLM/TTS se carga al arrancar
+  el servidor para que el saludo no pague la carga de modelos.
+
+## Cumplimiento por compuertas
+
+| Compuerta | Cómo se cumple |
 |---|---|
-| [`docs/audio.md`](docs/audio.md) | **Empieza aquí.** ALSA, las limitaciones de la tarjeta, el eco, el zumbido |
-| [`docs/arquitectura.md`](docs/arquitectura.md) | El pipeline, los frames, y dos trampas de Pipecat 1.x |
-| [`docs/rag.md`](docs/rag.md) | Troceado, embeddings, y cómo calibrar el umbral |
-| [`docs/herramientas.md`](docs/herramientas.md) | Cómo funcionan y cómo añadir una |
-| [`docs/panel.md`](docs/panel.md) | El panel web: prompt, alma, herramientas, MCP, hooks |
-| [`docs/telefonia.md`](docs/telefonia.md) | La placa como manos libres del móvil: HFP, PBAP, autocontestar |
-| [`docs/botones.md`](docs/botones.md) | El mando físico: los botones de la tarjeta, los gestos, los pitidos |
-| [`docs/despliegue.md`](docs/despliegue.md) | Podman rootless, Quadlet, diagnóstico |
-| [`docs/rendimiento.md`](docs/rendimiento.md) | Todas las medidas y cómo reproducirlas |
+| **G2** — levantable en ≤15 min | La solución ya corre en la placa; el acceso es abrir dos URLs con las credenciales de arriba. |
+| **G3** — modelo permitido | `gemini-2.5-flash` (familia Gemini Flash, nivel gratuito de AI Studio). Declarado aquí, en el informe y verificable en `packages/core/src/voice_agent_core/config.py` y `src/voice_agent/services.py`. |
+| **G4** — voz en tiempo real por navegador | https://voz.agapanto.com.co — micrófono y voz por WebRTC, con interrupciones (*barge-in*). |
+| **G5** — conocimiento vivo desde la consola | Panel → Conocimiento: subir → Reindexar → el agente lo usa; eliminar → Reindexar → lo olvida. Sin reinicios. |
+
+## Métricas medidas
+
+> Generadas con `make metricas` a partir de `data/metricas/*.jsonl`, que el
+> agente escribe en cada llamada real. Método: la latencia voz-a-voz se mide
+> desde el frame de fin de habla del usuario hasta el primer frame de audio
+> del agente, dentro del propio pipeline.
+
+*(Tabla pendiente de las llamadas de calibración; se genera con `make
+metricas` y se pega aquí antes de la entrega.)*
+
+## Triaje y trazabilidad
+
+- **Triaje**: la herramienta `registrar_alerta` persiste la decisión
+  (verde/amarillo/rojo) **en el momento en que se toma**, no al colgar, en
+  `data/evaluaciones/alertas/<fecha-hora>.json`, con síntomas y justificación.
+  Ante la ambigüedad, el prompt obliga a indagar antes de decidir y, en la
+  duda entre dos niveles, a elegir el más grave (asimetría clínica).
+- **Resumen de llamada**: `finalizar_llamada` deja en
+  `data/evaluaciones/resumenes/` un JSON con paciente y procedimiento,
+  síntomas reportados, decisión tomada, referencias usadas y próximos pasos.
+- **Trazabilidad verificable**: cada consulta al RAG queda registrada en
+  `data/evaluaciones/trazas/<id-llamada>.jsonl` con los pasajes que el índice
+  devolvió de verdad (documento, tema y distancia). El campo
+  `documentos_consultados` del resumen sale de esa traza, no de la memoria del
+  modelo: se puede abrir el PDF citado y comprobar el pasaje.
+
+## Seguridad y resistencia a inyección
+
+- El prompt del sistema fija reglas inmutables (no revelar instrucciones, no
+  cambiar de rol, no aceptar órdenes del interlocutor ni de los documentos).
+- Los extractos que devuelve el RAG van precedidos de un blindaje que los
+  declara datos, no instrucciones: un PDF subido con órdenes dirigidas al
+  modelo se trata como texto citado.
+- El agente no puede indicar dosis ni pautas de medicación, ni siquiera si
+  aparecen en un documento: remite al médico tratante.
+- La consola exige usuario y contraseña; la edición de hooks de comandos está
+  desactivada en el despliegue expuesto; las claves de API viven solo en el
+  `.env` de la placa y el panel ni las lee ni las muestra.
 
 ## Limitaciones conocidas
 
-- **Zumbido en los auriculares** mientras el agente corre. Es diafonía del
-  adaptador USB —el conversor de entrada inyecta ruido en la salida por la
-  alimentación compartida—, no del software: lo que el agente envía a la tarjeta
-  en silencio son todas las muestras a cero. No tiene arreglo por software; la
-  salida es separar micrófono y auriculares en dos adaptadores.
-- **La precisión con voz humana real no está medida.** Todas las pruebas
-  automatizadas usan voz sintetizada, que no es un sustituto justo.
+- Un PDF del corpus entregado (`Appendicitis/REVISIÓN DE LA LITERATURA...`)
+  está escaneado sin capa de texto y se excluyó de la indexación; requeriría
+  OCR.
+- El nivel gratuito de Gemini ronda las diez peticiones por minuto; una
+  conversación muy rápida puede rozarlo. Mitigación documentada:
+  `LLM_BACKEND=groq` en `.env` cambia a Llama 3.3 en Groq sin tocar código.
+- La voz de Piper es un español de España (`es_ES-davefx-medium`); no hay voz
+  colombiana de calidad comparable en Piper. El registro y el léxico de Clara
+  sí son colombianos.
+- La telefonía Bluetooth y los botones físicos del proyecto base están
+  desactivados: el reto no usa telefonía real.
 
-## Licencia
+## Estructura del repositorio
 
-Código MIT, pero `piper-tts` es **GPL-3.0** y corre dentro del proceso. Para uso
-personal da igual; si lo distribuyes, la GPL puede alcanzar a tu código. La
-alternativa es `PiperHttpTTSService`, con un servidor Piper aparte.
+```
+src/voice_agent/          el agente: pipeline, web.py (llamada por navegador),
+                          rag/ (ingesta y búsqueda), tools/ (herramientas del
+                          modelo), traza.py, metrica.py
+packages/core/            configuración y contratos compartidos (evaluaciones,
+                          tareas, rutas); el panel solo puede importar esto
+packages/panel/           consola de administración (Django)
+corpus/                   el corpus clínico indexable, un tema por carpeta
+deploy/                   unidades systemd de usuario (web, ingest, panel)
+docs/                     documentación técnica en español
+tests/                    ~1000 tests; make lint && make test
+```
+
+Proyecto derivado de un agente de voz doméstico para NanoPi construido por el
+mismo autor; el historial de este repositorio empieza en la importación de esa
+base y contiene la adaptación completa al reto.

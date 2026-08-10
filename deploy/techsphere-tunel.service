@@ -1,0 +1,31 @@
+# El túnel de Cloudflare que expone las dos superficies al jurado:
+#   voz.agapanto.com.co   -> localhost:7860  (interfaz de llamada)
+#   panel.agapanto.com.co -> localhost:8081  (consola de administración)
+#
+# Es un túnel con nombre, gestionado desde Cloudflare (config_src=cloudflare):
+# el ingress vive en el dashboard/API y aquí solo hace falta el token, que se
+# guarda en ~/.cloudflared/clara.env como TUNNEL_TOKEN=... (fuera del
+# repositorio: es una credencial).
+#
+# Creación (una vez, requiere `cloudflared tunnel login`):
+#   cloudflared tunnel create clara
+#   cloudflared tunnel route dns clara voz.agapanto.com.co
+#   cloudflared tunnel route dns clara panel.agapanto.com.co
+#   (el ingress se define en config o en el dashboard; ver README)
+#
+# Instalación:
+#   cp deploy/clara-tunel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now clara-tunel
+[Unit]
+Description=Tunel de Cloudflare hacia la interfaz de llamada y la consola
+After=network-online.target
+
+[Service]
+Type=exec
+EnvironmentFile=%h/.cloudflared/clara.env
+ExecStart=%h/.local/bin/cloudflared tunnel run --token ${TUNNEL_TOKEN}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
