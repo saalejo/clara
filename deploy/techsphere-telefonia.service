@@ -1,0 +1,24 @@
+# El puente de telefonía Bluetooth (HFP) para la copia del reto, en NATIVO.
+#
+# Es el mismo puente del proyecto base, apuntando al checkout de clara:
+# el socket unix se deriva de DATA_DIR (aquí, ~/clara/data/run/), así que
+# no choca con el del proyecto original — pero el adaptador Bluetooth es uno
+# solo: NO ejecutar los dos puentes a la vez.
+#
+# Instalación:
+#   cp deploy/clara-telefonia.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now clara-telefonia
+[Unit]
+Description=Agente de seguimiento postoperatorio - puente de telefonia Bluetooth
+After=bluetooth.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/clara
+EnvironmentFile=-%h/clara/.env.telefonia
+ExecStart=%h/.local/bin/uv run --package voice-agent-telefonia python -m voice_agent_telefonia
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

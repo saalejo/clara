@@ -61,6 +61,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
+from voice_agent.bot import _preparar_telefonia
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
 from voice_agent.metrica import MetricsRecorder, anotar_evento
@@ -73,6 +74,9 @@ from voice_agent.services import (
     build_turn_strategies,
     build_vad,
 )
+from voice_agent.tareas_programadas import MisionesLlamada, ProgramadorTareas, SalaActual
+from voice_agent.telefonia_audio import ClienteAudioSCO
+from voice_agent.telefonia_llamada import ServiciosDeLlamada, atender_llamada
 from voice_agent.tools import herramientas_activas
 from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings, get_settings
@@ -420,8 +424,56 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             ice_servers=_servidores_ice(config),
             connection_mode=ConnectionMode.SINGLE,
         )
+
+        # --- Telefonía: la otra superficie, coexistiendo con el navegador ---
+        # Mismo patrón que `bot.ejecutar` sin la sala: si el puente Bluetooth
+        # contesta, este proceso atiende también las llamadas del móvil
+        # emparejado (contestador clínico) y ejecuta las llamadas de misión
+        # programadas. Sin puente, la interfaz web queda exactamente como
+        # antes: una línea en el log y ni un traceback. Todo en el MISMO
+        # proceso a propósito: el modelo de embeddings tiene `lru_cache`, así
+        # que el pipeline de llamada reutiliza el que ya cargó el web.
+        telefonia = await _preparar_telefonia(config)
+        audio_llamadas: ClienteAudioSCO | None = None
+        programador: asyncio.Task[None] | None = None
+        if telefonia is not None:
+            misiones = MisionesLlamada()
+            # Sin sala montada: las misiones de tipo sala se aplazan solas.
+            sala = SalaActual()
+            servicios_llamada = ServiciosDeLlamada(config, runtime)
+            servicios_llamada.precargar()
+
+            async def _al_llegar_audio(sock: Any, metadatos: dict[str, Any]) -> None:
+                await atender_llamada(
+                    sock,
+                    metadatos,
+                    config,
+                    runtime,
+                    servicios_llamada,
+                    misiones=misiones,
+                    telefonia=telefonia,
+                )
+
+            audio_llamadas = ClienteAudioSCO(
+                config.telefonia_socket.with_name("telefonia-audio.sock"),
+                _al_llegar_audio,
+            )
+            audio_llamadas.arrancar()
+            programador = asyncio.create_task(
+                ProgramadorTareas(config, sala, telefonia, misiones).correr()
+            )
+            logger.info("Telefonía activa: contestador clínico y llamadas de misión")
+
         logger.info("Interfaz de llamada lista")
-        yield
+        try:
+            yield
+        finally:
+            if programador is not None:
+                programador.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await programador
+            if audio_llamadas is not None:
+                await audio_llamadas.parar()
 
     app = FastAPI(title="Llamada de voz — seguimiento postoperatorio", lifespan=_vida)
 

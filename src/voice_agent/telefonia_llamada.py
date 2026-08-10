@@ -63,10 +63,12 @@ from voice_agent_core.runtime import RuntimeConfig
 #: que la ha consultado y se queda callado esperándola.
 PROMPT_LLAMADA = """
 
-Estás atendiendo una llamada telefónica en nombre de la casa: quien te habla
-está al otro lado del teléfono, no en la habitación. Preséntate como el
-asistente, sé breve —es una llamada, no una charla— y toma recado si
-preguntan por alguien. No prometas acciones que no puedas hacer desde aquí."""
+Estás atendiendo una llamada telefónica entrante: quien te habla está al otro
+lado del teléfono. Lo habitual es que sea un paciente en seguimiento
+postoperatorio o un familiar; preséntate, sé breve —es una llamada— y haz el
+seguimiento igual que siempre: confirma quién llama y de qué cirugía se
+trata, indaga, consulta tus protocolos, clasifica y registra. No prometas
+acciones que no puedas hacer desde aquí."""
 
 #: La variante para una llamada que marcó el planificador de tareas. Sustituye
 #: a `PROMPT_LLAMADA` entera: "toma recado si preguntan por alguien" es el

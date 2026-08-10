@@ -115,11 +115,14 @@ class _Colector(FrameProcessor):
 
 
 async def _correr_guion(
-    tmp_path: Path, guion: list[tuple[float, Frame]], espera: float
+    tmp_path: Path, guion: list[tuple[float, Frame]], espera: float, retardo_muletilla: float = 0.2
 ) -> list[str]:
     """Corre un pipeline [FillerProcessor → colector] inyectando frames con retardos."""
     ajustes = Settings(  # type: ignore[call-arg]
-        _env_file=None, data_dir=tmp_path, filler_delay_secs=0.2, filler_min_gap_secs=0.0
+        _env_file=None,
+        data_dir=tmp_path,
+        filler_delay_secs=retardo_muletilla,
+        filler_min_gap_secs=0.0,
     )
     banco = FillerBank(ajustes)
     banco._audio = {"pensando": [b"\x00\x00"]}
@@ -155,10 +158,14 @@ async def test_la_peticion_en_marcha_no_cancela_la_muletilla(tmp_path: Path) -> 
 
 
 async def test_el_primer_token_cancela_la_muletilla(tmp_path: Path) -> None:
+    # Margen holgado entre el token (a +0.05 s) y la muletilla (a +0.5 s): con
+    # 0.2 s el test flaqueaba en la placa cargada, donde un sleep de 50 ms
+    # puede estirarse más que la diferencia.
     tipos = await _correr_guion(
         tmp_path,
         [(0.1, UserStoppedSpeakingFrame()), (0.05, LLMTextFrame("Hola"))],
-        espera=0.6,
+        espera=1.0,
+        retardo_muletilla=0.5,
     )
     assert "TTSAudioRawFrame" not in tipos
 
