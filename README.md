@@ -52,6 +52,13 @@ El micrófono del navegador exige HTTPS u `http://localhost`: para acceder desde
 otra máquina hace falta un túnel (por ejemplo `cloudflared tunnel --url
 http://localhost:7860`).
 
+**Acceso desde otras redes (WebRTC):** el túnel solo transporta la
+señalización; la media atraviesa gracias a un servidor TURN de Cloudflare
+Realtime configurado en `.env` (`ICE_SERVERS`, `TURN_USERNAME`,
+`TURN_CREDENTIAL`). Las credenciales caducan cada 48 horas: `make turn` las
+renueva (usa `TURN_KEY_ID`/`TURN_KEY_TOKEN` del `.env`) y luego se reinicia el
+servicio. Verificado con un móvil en red celular contra la placa.
+
 ## Arquitectura
 
 ```

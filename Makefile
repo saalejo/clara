@@ -135,6 +135,10 @@ run-web:  ## Arranca la interfaz de llamada por navegador (puerto 7860)
 metricas:  ## Agrega las métricas medidas (latencia, tokens, coste) para el README
 	uv run python scripts/metricas.py
 
+.PHONY: turn
+turn:  ## Renueva las credenciales TURN de Cloudflare (caducan cada 48 h)
+	uv run python scripts/renovar_turn.py
+
 # --- Panel de control ---------------------------------------------------------
 
 # El panel necesita su propio fichero de entorno, distinto del del agente. El
