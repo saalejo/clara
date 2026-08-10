@@ -282,10 +282,23 @@ class ServiciosDeLlamada:
     conversación de la sala mientras tanto.
     """
 
-    def __init__(self, settings: Settings, runtime: RuntimeConfig) -> None:
-        """Prepara el almacén sin cargar nada todavía."""
+    def __init__(
+        self, settings: Settings, runtime: RuntimeConfig, retriever: Retriever | None = None
+    ) -> None:
+        """Prepara el almacén sin cargar nada todavía.
+
+        Args:
+            settings: Configuración del agente.
+            runtime: Configuración del panel, ya cargada.
+            retriever: Buscador ya construido, para compartirlo entre los
+                pipelines del proceso. Dos `PersistentClient` de Chroma
+                abriéndose a la vez en hilos distintos corrompen su caché
+                interna; el buscador es de solo lectura y compartirlo es
+                seguro.
+        """
         self._settings = settings
         self._runtime = runtime
+        self._retriever = retriever
         self._listos: tuple[Any, Any, Any] | None = None
         self._cargando: asyncio.Task[None] | None = None
         self._banco: FillerBank | None = None
@@ -333,7 +346,8 @@ class ServiciosDeLlamada:
             if self._recursos is None:
                 try:
                     self._recursos = AppResources(
-                        settings=self._settings, retriever=Retriever(self._settings)
+                        settings=self._settings,
+                        retriever=self._retriever or Retriever(self._settings),
                     )
                 except Exception:
                     logger.exception("Sin RAG para las llamadas; se atenderá sin herramientas")

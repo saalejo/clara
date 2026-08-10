@@ -128,10 +128,23 @@ class ServiciosWeb:
     encarga el siguiente.
     """
 
-    def __init__(self, settings: Settings, runtime: RuntimeConfig) -> None:
-        """Prepara el almacén sin cargar nada todavía."""
+    def __init__(
+        self, settings: Settings, runtime: RuntimeConfig, retriever: Retriever | None = None
+    ) -> None:
+        """Prepara el almacén sin cargar nada todavía.
+
+        Args:
+            settings: Configuración del agente.
+            runtime: Configuración del panel, ya cargada.
+            retriever: Buscador ya construido, para compartirlo con otros
+                pipelines del mismo proceso. Dos `PersistentClient` de Chroma
+                abriéndose a la vez en hilos distintos corrompen su caché
+                interna ("Could not connect to tenant default_tenant") — pasó
+                al precargar web y telefonía en paralelo.
+        """
         self._settings = settings
         self._runtime = runtime
+        self._retriever = retriever
         self._listos: tuple[Any, Any, Any] | None = None
         self._cargando: asyncio.Task[None] | None = None
         self._banco: FillerBank | None = None
@@ -178,7 +191,8 @@ class ServiciosWeb:
             if self._recursos is None:
                 try:
                     self._recursos = AppResources(
-                        settings=self._settings, retriever=Retriever(self._settings)
+                        settings=self._settings,
+                        retriever=self._retriever or Retriever(self._settings),
                     )
                 except Exception:
                     logger.exception("Sin RAG para la llamada web; se atenderá sin herramientas")
@@ -413,7 +427,15 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
         # A fichero además de a consola: el panel sigue el log desde ahí.
         setup_logging(config.log_level, archivo=ruta_log_agente(config.data_dir))
         runtime = cargar_runtime(config.data_dir)
-        servicios = ServiciosWeb(config, runtime)
+        # El buscador se construye UNA vez, antes de las dos precargas (web y
+        # telefonía): abrir dos clientes de Chroma en paralelo corrompe su
+        # caché interna, y además el índice es de solo lectura.
+        retriever_compartido: Retriever | None = None
+        try:
+            retriever_compartido = await asyncio.to_thread(Retriever, config)
+        except Exception:
+            logger.exception("Sin RAG; el agente atenderá sin herramientas")
+        servicios = ServiciosWeb(config, runtime, retriever=retriever_compartido)
         servicios.precargar()
         _app.state.servicios = servicios
         # Las conversaciones en curso. Guardar la referencia es obligatorio
@@ -440,7 +462,7 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             misiones = MisionesLlamada()
             # Sin sala montada: las misiones de tipo sala se aplazan solas.
             sala = SalaActual()
-            servicios_llamada = ServiciosDeLlamada(config, runtime)
+            servicios_llamada = ServiciosDeLlamada(config, runtime, retriever=retriever_compartido)
             servicios_llamada.precargar()
 
             async def _al_llegar_audio(sock: Any, metadatos: dict[str, Any]) -> None:
