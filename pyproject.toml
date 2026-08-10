@@ -24,10 +24,21 @@ dependencies = [
     #                 navegador que exige el reto (compuerta G4). aiortc es wheel
     #                 puro y sus binarios (pylibsrtp, opencv-headless) publican
     #                 wheels aarch64; `av` ya venía por faster-whisper.
-    # El LLM (Gemini por AI Studio o Llama por Groq, los permitidos por el
-    # reto) habla el protocolo de OpenAI, cuyo SDK es dependencia BASE de
-    # pipecat: no hace falta ningún extra para él.
     "pipecat-ai[local,silero,whisper,piper,deepgram,mcp,webrtc]==1.6.0",
+
+    # El SDK nativo de Gemini, para `GoogleLLMService`. NO se usa el extra
+    # `google` de pipecat: arrastra google-cloud-speech y texttospeech (grpc,
+    # pesados y ajenos a este proyecto). Tampoco vale el endpoint
+    # OpenAI-compatible de AI Studio: su streaming emite tool-calls fantasma
+    # con nombre vacío que envenenan el historial (error 400 "function_
+    # response.name: Name cannot be empty" en TODA petición posterior; se
+    # depuró en una llamada real). El plan B por Groq sí usa el protocolo
+    # OpenAI, cuyo SDK es dependencia base de pipecat.
+    "google-genai>=1.68,<3",
+    # `GoogleLLMService` importa `google.api_core.exceptions` (para reintentar
+    # ante DeadlineExceeded) y google-genai no lo arrastra. Es Python puro y
+    # pequeño; sin él, el import del servicio muere en el arranque.
+    "google-api-core>=2,<3",
 
     # Servidor HTTP de la interfaz de llamada (web.py): sirve la UI y negocia
     # las ofertas WebRTC. uvicorn ya está en el lock (lo usa el panel).

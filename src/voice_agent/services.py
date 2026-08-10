@@ -13,7 +13,7 @@ from typing import Any
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.llm_service import LLMService
 from pipecat.services.piper.tts import PiperTTSService
 from pipecat.services.stt_service import STTService
 from pipecat.services.tts_service import TTSService
@@ -35,13 +35,6 @@ from voice_agent.audio_devices import resolve_device_indices
 from voice_agent.audio_gate import MicrophoneGate
 from voice_agent.logging import suppressed_stderr
 from voice_agent_core.config import LLMBackend, Settings, STTBackend
-
-#: El endpoint OpenAI-compatible de Google AI Studio. Usarlo en vez del SDK
-#: nativo de Google tiene dos ventajas: `openai` ya está en el lock (cero
-#: dependencias nuevas) y el servicio hereda de `OpenAILLMService`, el mismo
-#: linaje que el OpenRouter con el que se calibró este agente — el
-#: comportamiento del streaming y las herramientas es idéntico.
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
 class TunedWhisperSTTService(WhisperSTTService):
@@ -193,13 +186,19 @@ def build_stt(settings: Settings, *, sample_rate: int | None = None) -> STTServi
     )
 
 
-def build_llm(settings: Settings) -> OpenAILLMService:
+def build_llm(settings: Settings) -> LLMService[Any]:
     """Construye el servicio de LLM según el backend permitido por el reto.
 
     El modelo está restringido por la compuerta G3: Gemini Flash (nivel
-    gratuito de AI Studio) o Llama vía Groq (nivel gratuito). Ambos hablan el
-    protocolo de OpenAI, así que los dos backends comparten servicio y solo
-    cambian la URL base y la clave.
+    gratuito de AI Studio) o Llama vía Groq (nivel gratuito).
+
+    Gemini va por su SDK nativo (`GoogleLLMService`), no por el endpoint
+    OpenAI-compatible de AI Studio. No es una preferencia estética: el shim
+    de compatibilidad emite por streaming tool-calls fantasma con el nombre
+    vacío; Pipecat los guarda en el historial y Gemini rechaza después su
+    propio historial con un 400 ("function_response.name: Name cannot be
+    empty") en TODA petición posterior — el agente queda mudo a mitad de
+    llamada. Se depuró en una conversación real; ver docs/arquitectura.md.
 
     Args:
         settings: Configuración del agente.
@@ -221,14 +220,21 @@ def build_llm(settings: Settings) -> OpenAILLMService:
             ),
         )
 
+    from pipecat.services.google.llm import GoogleLLMService
+
     logger.info(f"LLM: Google AI Studio / {settings.gemini_model}")
-    return OpenAILLMService(
+    return GoogleLLMService(
         api_key=settings.require_llm_api_key(),
-        base_url=GEMINI_BASE_URL,
-        settings=OpenAILLMService.Settings(
+        settings=GoogleLLMService.Settings(
             model=settings.gemini_model,
             temperature=settings.llm_temperature,
-            max_completion_tokens=settings.llm_max_tokens,
+            max_tokens=settings.llm_max_tokens,
+            # Gemini 2.5 "piensa" por defecto, y ese razonamiento se cobra en
+            # tokens Y en segundos antes del primer token — medido: con un
+            # presupuesto corto la respuesta llegaba vacía porque se fue
+            # entera en pensar. En un agente de voz la latencia del primer
+            # token es la conversación, así que se apaga.
+            thinking=GoogleLLMService.ThinkingConfig(thinking_budget=0),
         ),
     )
 
