@@ -266,3 +266,27 @@ de memoria del proceso que abre el buscador y hace dos consultas:
 Unos 2,4 MB por tema. Casi todo lo que se ve ahí es el modelo de embeddings, que
 se carga una sola vez y no depende del número de colecciones. Con dos docenas de
 temas el coste sigue siendo despreciable frente a los 2 GB del agente.
+
+## Calibración para el corpus clínico del reto (agosto de 2026)
+
+El corpus del reto mezcla español e inglés y las preguntas llegan en español,
+así que el umbral se recalibró con sondas reales sobre los 10 157 fragmentos
+indexados (`RAG_MAX_DISTANCE=1.5` temporal para ver las distancias crudas):
+
+| Sonda | Mejor distancia |
+|---|---|
+| ¿Puedo mojar la herida después de una apendicectomía? | 0.372 |
+| ¿Qué síntomas de alarma debo vigilar tras un reemplazo de cadera? | 0.374 |
+| ¿Es normal tener fiebre después de una cirugía de colon? | 0.337 |
+| ¿Cuándo puedo comer normal después de que me quiten la vesícula? | 0.403 |
+| — fuera del corpus — | |
+| ¿Qué me tomo para la migraña? | 0.579 |
+| ¿Cómo preparo un ajiaco santafereño? | 0.598 |
+| ¿Cuál es la capital de Australia? | 0.693 |
+| ¿Quién ganó el mundial de fútbol? | 0.720 |
+
+Las nubes quedan separadas (cubiertas ≤ 0.41, ajenas ≥ 0.56) y el umbral se
+fijó en **0.52**: por encima de todo lo cubierto con margen, y por debajo de la
+sonda ajena más cercana — que además era la más peligrosa, porque "¿qué me tomo
+para la migraña?" recuperaba instrucciones de apendicectomía con el 0.68
+anterior. `RAG_TOP_K=5` para compensar el corpus grande.
