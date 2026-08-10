@@ -24,7 +24,12 @@ from voice_agent_core import board, corpus
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
 from voice_agent_core.estado import leer_estado
 from voice_agent_core.runtime import EventoHook
-from voice_agent_core.rutas import dir_resultados_tareas, ruta_bitacora_tareas
+from voice_agent_core.rutas import (
+    dir_alertas,
+    dir_resultados_tareas,
+    dir_resumenes,
+    ruta_bitacora_tareas,
+)
 from voice_agent_panel import agenda, control, tailer
 from voice_agent_panel.context_processors import CLAVE_SESION_PERFIL, perfil_en_edicion
 from voice_agent_panel.exporter import (
@@ -698,6 +703,34 @@ def tarea_borrar(request: HttpRequest, pk: int) -> HttpResponse:
     get_object_or_404(TareaProgramada, pk=pk).delete()
     _exportar_tareas_avisando(request)
     return redirect("tareas")
+
+
+def _leer_json_de(carpeta: Any, tope: int = 50) -> list[dict[str, Any]]:
+    """Lee los últimos JSON de una carpeta, tolerando ficheros a medias."""
+    elementos: list[dict[str, Any]] = []
+    if carpeta.is_dir():
+        for fichero in sorted(carpeta.iterdir(), reverse=True)[:tope]:
+            try:
+                elementos.append(json.loads(fichero.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+    return elementos
+
+
+def evaluaciones(request: HttpRequest) -> HttpResponse:
+    """Las alertas de triaje y los resúmenes de llamada del seguimiento clínico.
+
+    Todo sale de los JSON que el agente escribe con `registrar_alerta` y
+    `finalizar_llamada`; el panel solo lee, igual que con las tareas.
+    """
+    return render(
+        request,
+        "panel/evaluaciones.html",
+        {
+            "alertas": _leer_json_de(dir_alertas(django_settings.DATA_DIR)),
+            "resumenes": _leer_json_de(dir_resumenes(django_settings.DATA_DIR)),
+        },
+    )
 
 
 def tarea_resultados(request: HttpRequest, pk: int) -> HttpResponse:

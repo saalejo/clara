@@ -160,6 +160,15 @@ def _indexar_tema(settings: Settings, cliente: ClientAPI, tema: str) -> int:
 
     coleccion = abrir_coleccion(settings, tema, cliente=cliente)
 
+    # Los ids ya presentes, una sola vez por colección. El id incluye un
+    # resumen del contenido, así que "el id existe" implica "el fragmento es
+    # idéntico": no hay que volver a calcular su embedding. Sin este filtro,
+    # `upsert` re-embebe el corpus entero en cada reconciliación —medido en la
+    # placa, cerca de una hora con el corpus clínico— y el botón Reindexar del
+    # panel sería inutilizable en vivo: con él, añadir un documento cuesta lo
+    # que cuesta ese documento.
+    existentes = set(coleccion.get(include=[])["ids"])
+
     escritos: list[str] = []
     total = 0
     for documento in documentos:
@@ -182,17 +191,23 @@ def _indexar_tema(settings: Settings, cliente: ClientAPI, tema: str) -> int:
             for f in fragmentos
         ]
 
-        for i in range(0, len(ids), TAMANO_LOTE):
-            corte = slice(i, i + TAMANO_LOTE)
-            coleccion.upsert(
-                ids=ids[corte],
-                documents=textos[corte],
-                metadatas=metadatos[corte],  # type: ignore[arg-type]
-            )
-
         escritos.extend(ids)
         total += len(fragmentos)
-        logger.info(f"  {origen}: {len(fragmentos)} fragmento(s)")
+
+        pendientes = [i for i, id_ in enumerate(ids) if id_ not in existentes]
+        if not pendientes:
+            logger.info(f"  {origen}: {len(fragmentos)} fragmento(s), sin cambios")
+            continue
+
+        for i in range(0, len(pendientes), TAMANO_LOTE):
+            lote = pendientes[i : i + TAMANO_LOTE]
+            coleccion.upsert(
+                ids=[ids[j] for j in lote],
+                documents=[textos[j] for j in lote],
+                metadatas=[metadatos[j] for j in lote],
+            )
+
+        logger.info(f"  {origen}: {len(fragmentos)} fragmento(s), {len(pendientes)} nuevo(s)")
 
     _olvidar_sobrantes(coleccion, escritos, etiqueta)
     return total

@@ -34,10 +34,13 @@ async def buscar_en_documentos(params: FunctionCallParams, consulta: str) -> Non
     español y en inglés; tú siempre respondes en español.
 
     Args:
-        consulta: La pregunta o los términos a buscar, con palabras completas.
-            Reformula lo que te han preguntado de forma autónoma y
-            comprensible por sí misma, sin pronombres que dependan del turno
-            anterior, e incluye la cirugía del paciente si la sabes.
+        consulta: Términos clave de búsqueda, NO una pregunta completa: los
+            sustantivos que identifican el asunto, más la cirugía del paciente
+            si la sabes. Por ejemplo "signos de alarma apendicectomía fiebre"
+            o "cuidados de la herida colecistectomía", en vez de "¿es normal
+            que me duela?". Nada de pronombres que dependan del turno
+            anterior. Si la primera búsqueda no encuentra nada útil, prueba
+            una vez más con otros términos antes de decir que no está.
     """
     # NOTA IMPORTANTE PARA QUIEN LEA ESTO
     # -----------------------------------

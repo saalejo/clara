@@ -1,0 +1,39 @@
+{% extends "panel/base.html" %}
+{% block contenido %}
+<h1>Evaluaciones clínicas</h1>
+<p class="pie">Lo escribe el agente durante las llamadas: las alertas de triaje
+  con <code>registrar_alerta</code> (en el momento de decidir, no al colgar) y
+  los resúmenes con <code>finalizar_llamada</code>. La traza documental de cada
+  llamada queda en <code>data/evaluaciones/trazas/</code>. Se enseñan las
+  últimas cincuenta.</p>
+
+<h2>Alertas de triaje</h2>
+{% for a in alertas %}
+<div class="tarjeta">
+  <p><strong>{{ a.momento }}</strong> — nivel <strong>{{ a.nivel }}</strong>
+    <span class="ayuda">({{ a.id_llamada }})</span></p>
+  <p style="white-space:pre-wrap">{{ a.sintomas }}</p>
+  <p class="ayuda" style="white-space:pre-wrap">{{ a.justificacion }}</p>
+</div>
+{% empty %}
+<p class="ayuda">Ninguna todavía.</p>
+{% endfor %}
+
+<h2>Resúmenes de llamada</h2>
+{% for r in resumenes %}
+<div class="tarjeta">
+  <p><strong>{{ r.momento }}</strong> — {{ r.paciente_y_procedimiento }}
+    <span class="ayuda">({{ r.id_llamada }})</span></p>
+  <p style="white-space:pre-wrap"><strong>Síntomas:</strong> {{ r.sintomas }}</p>
+  <p style="white-space:pre-wrap"><strong>Decisión:</strong> {{ r.decision }}</p>
+  <p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ r.proximos_pasos }}</p>
+  {% if r.referencias %}<p style="white-space:pre-wrap"><strong>Referencias citadas:</strong> {{ r.referencias }}</p>{% endif %}
+  {% if r.documentos_consultados %}
+  <p class="ayuda"><strong>Documentos consultados (traza real):</strong>
+    {{ r.documentos_consultados|join:" · " }}</p>
+  {% endif %}
+</div>
+{% empty %}
+<p class="ayuda">Ninguno todavía.</p>
+{% endfor %}
+{% endblock %}

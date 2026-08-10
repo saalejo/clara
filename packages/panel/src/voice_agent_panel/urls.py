@@ -55,6 +55,7 @@ urlpatterns = [
     path("panel/tareas/<int:pk>/", views.tarea_editar, name="tarea_editar"),
     path("panel/tareas/<int:pk>/borrar/", views.tarea_borrar, name="tarea_borrar"),
     path("panel/tareas/<int:pk>/resultados/", views.tarea_resultados, name="tarea_resultados"),
+    path("panel/evaluaciones/", views.evaluaciones, name="evaluaciones"),
     path("panel/hooks/", views.hooks, name="hooks"),
     path("panel/hooks/nuevo/", views.hook_editar, name="hook_nuevo"),
     path("panel/hooks/<int:pk>/", views.hook_editar, name="hook_editar"),

@@ -147,6 +147,11 @@ metricas` y se pega aquí antes de la entrega.)*
 
 ## Limitaciones conocidas
 
+- **Reindexar tarda unos cinco minutos** con el corpus completo en la placa
+  (reconcilia los 106 PDF; los fragmentos sin cambios no se re-embeben, pero
+  la extracción de texto sí se repite). El documento subido está disponible al
+  terminar, sin reiniciar nada; el panel muestra el estado del proceso.
+
 - Un PDF del corpus entregado (`Appendicitis/REVISIÓN DE LA LITERATURA...`)
   está escaneado sin capa de texto y se excluyó de la indexación; requeriría
   OCR.
