@@ -16,6 +16,15 @@ After=bluetooth.target
 Type=exec
 WorkingDirectory=%h/clara
 EnvironmentFile=-%h/clara/.env.telefonia
+# OJO — wide-band-speech debe estar APAGADO en el adaptador. Con WBS activo,
+# la negociación de códec HFP deja el SCO mudo con el TECNO (0 paquetes en
+# ambos sentidos y reset a los ~20 s); con CVSD puro fluyen los ~15.900 B/s
+# de libro. Se depuró con el modo eco el 10-08-2026. El ajuste persiste hasta
+# reiniciar la placa; tras un reinicio, aplicarlo a mano UNA vez:
+#   sudo btmgmt power off && sudo btmgmt wbs off && sudo btmgmt power on
+# NO va en ExecStartPre: bajo systemd cada btmgmt tarda ~90 s, el arranque
+# supera TimeoutStartSec y la unidad entra en bucle de reinicios ciclando el
+# adaptador — se pagó con el puente inalcanzable.
 ExecStart=%h/.local/bin/uv run --package voice-agent-telefonia python -m voice_agent_telefonia
 Restart=on-failure
 RestartSec=5
