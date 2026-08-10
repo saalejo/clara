@@ -109,12 +109,28 @@ Decisiones clave, con su porqué:
 ## Métricas medidas
 
 > Generadas con `make metricas` a partir de `data/metricas/*.jsonl`, que el
-> agente escribe en cada llamada real. Método: la latencia voz-a-voz se mide
-> desde el frame de fin de habla del usuario hasta el primer frame de audio
-> del agente, dentro del propio pipeline.
+> agente escribe en cada llamada real (nada de estimaciones). Método: la
+> latencia voz-a-voz se mide dentro del propio pipeline, desde el frame de
+> fin de habla del paciente hasta el primer frame de audio del agente; los
+> tokens los reporta el proveedor por invocación. Los JSONL quedan en la
+> placa y se pueden cotejar con los logs de la sesión.
 
-*(Tabla pendiente de las llamadas de calibración; se genera con `make
-metricas` y se pega aquí antes de la entrega.)*
+Medido sobre llamadas reales por navegador contra la placa (10 de agosto de 2026):
+
+| Métrica | Valor |
+|---|---|
+| Latencia voz-a-voz P50 | 1,65 s |
+| Latencia voz-a-voz P95 | 2,78 s |
+| Invocaciones del modelo por turno | 2,7 |
+| Tokens de entrada / salida por turno | 6 729 / 61 |
+| Tokens de entrada / salida por llamada | 20 186 / 183 |
+| Coste real por llamada (nivel gratuito de AI Studio) | $0,00 |
+| Coste extrapolado a precios de pago de gemini-2.5-flash ($0,30/M entrada, $2,50/M salida) | ≈ $0,0065 |
+
+TTFB medianos por servicio: Deepgram STT ≈ 0,75 s · Gemini (primer token) ≈ 0,63 s ·
+Piper TTS (primer chunk) ≈ 0,85 s. La entrada por turno es alta a propósito: el
+prompt clínico completo y los extractos del RAG viajan en cada invocación; es el
+precio de que cada respuesta esté anclada en documentos.
 
 ## Triaje y trazabilidad
 
