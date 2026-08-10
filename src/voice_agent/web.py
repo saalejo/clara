@@ -444,7 +444,7 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
         if oferta.pc_id is None:
             for conexion_previa in list(handler._pcs_map.values()):
                 logger.info(f"Desconectando la sesión previa {conexion_previa.pc_id}")
-                await conexion_previa.disconnect()
+                await conexion_previa.disconnect()  # type: ignore[no-untyped-call]
             handler._pcs_map.clear()
 
         async def _al_conectar(conexion: SmallWebRTCConnection) -> None:
