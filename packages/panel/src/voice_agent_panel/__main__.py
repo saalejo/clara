@@ -25,6 +25,10 @@ def _preparar() -> None:
 
     settings.DATABASES["default"]["NAME"].parent.mkdir(parents=True, exist_ok=True)
     call_command("migrate", interactive=False, verbosity=1)
+    # Los estáticos también se recolectan aquí, por el mismo motivo que la
+    # migración: en la imagen lo hacía el build, pero en el despliegue nativo
+    # no hay build y el panel arrancaba sin CSS (whitenoise devolvía 404).
+    call_command("collectstatic", interactive=False, verbosity=0)
     _sembrar_admin()
 
 
