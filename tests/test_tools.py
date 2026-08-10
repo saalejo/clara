@@ -19,6 +19,7 @@ from typing import Any, cast
 from pipecat.adapters.schemas.direct_function import DirectFunctionWrapper
 from pipecat.services.llm_service import FunctionCallParams
 
+from voice_agent.rag.retriever import Pasaje
 from voice_agent.resources import AppResources
 from voice_agent.tools import (
     HERRAMIENTAS,
@@ -32,13 +33,17 @@ from voice_agent_core.config import Settings
 class RetrieverFalso:
     """Doble de prueba del buscador: devuelve siempre lo mismo, sin modelos."""
 
-    def __init__(self, respuesta: str = "[1] (fuente: prueba.md)\nContenido de prueba.") -> None:
-        self.respuesta = respuesta
+    def __init__(self, pasajes: list[Pasaje] | None = None) -> None:
+        self.pasajes = (
+            pasajes
+            if pasajes is not None
+            else [Pasaje(texto="Contenido de prueba.", origen="prueba.md", distancia=0.2)]
+        )
         self.consultas: list[str] = []
 
-    def buscar_como_texto(self, consulta: str, *, top_k: int | None = None) -> str:
+    def buscar(self, consulta: str, *, top_k: int | None = None) -> list[Pasaje]:
         self.consultas.append(consulta)
-        return self.respuesta
+        return self.pasajes
 
 
 @dataclass
@@ -82,6 +87,8 @@ class TestEsquemas:
         }
         assert nombres == {
             "buscar_en_documentos",
+            "registrar_alerta",
+            "finalizar_llamada",
             "obtener_fecha_hora",
             "estado_del_sistema",
             "guardar_respuestas",
@@ -108,12 +115,19 @@ class TestEjecucion:
         await buscar_en_documentos(cast(FunctionCallParams, params), consulta="cuántos núcleos")
 
         assert retriever.consultas == ["cuántos núcleos"]
-        assert params.resultado == {"resultados": retriever.respuesta}
+        assert "Contenido de prueba." in params.resultado["resultados"]
+        assert "prueba.md" in params.resultado["resultados"]
+
+    async def test_la_busqueda_blinda_los_extractos_como_datos(self) -> None:
+        """Los pasajes van precedidos del aviso de que no son instrucciones."""
+        params, _ = _params()
+        await buscar_en_documentos(cast(FunctionCallParams, params), consulta="herida")
+
+        assert "no instrucciones" in params.resultado["resultados"]
 
     async def test_la_busqueda_propaga_el_aviso_de_que_no_hay_nada(self) -> None:
         """Cuando el RAG no encuentra nada, el modelo debe enterarse."""
-        vacio = RetrieverFalso("La base de conocimiento no contiene información relevante")
-        params, _ = _params(vacio)
+        params, _ = _params(RetrieverFalso([]))
         await buscar_en_documentos(cast(FunctionCallParams, params), consulta="paella")
 
         assert "no contiene información relevante" in params.resultado["resultados"]

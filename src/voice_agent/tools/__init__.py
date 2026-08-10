@@ -19,6 +19,7 @@ from pipecat.adapters.schemas.direct_function import DirectFunction, DirectFunct
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 
 from voice_agent.tools.clock import obtener_fecha_hora
+from voice_agent.tools.evaluacion import finalizar_llamada, registrar_alerta
 from voice_agent.tools.knowledge import buscar_en_documentos
 from voice_agent.tools.system import estado_del_sistema
 from voice_agent.tools.tareas import guardar_respuestas
@@ -29,6 +30,8 @@ from voice_agent.tools.telefono import HERRAMIENTAS_TELEFONIA
 # así que mypy rechaza pasarla donde se espera la unión.
 HERRAMIENTAS: list[FunctionSchema | DirectFunction] = [
     buscar_en_documentos,
+    registrar_alerta,
+    finalizar_llamada,
     obtener_fecha_hora,
     estado_del_sistema,
     guardar_respuestas,
@@ -113,8 +116,10 @@ __all__ = [
     "buscar_en_documentos",
     "esquema_de",
     "estado_del_sistema",
+    "finalizar_llamada",
     "guardar_respuestas",
     "herramientas_activas",
     "nombre_de",
     "obtener_fecha_hora",
+    "registrar_alerta",
 ]

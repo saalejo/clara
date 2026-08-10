@@ -62,6 +62,7 @@ from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
+from voice_agent.metrica import MetricsRecorder, anotar_evento
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
 from voice_agent.services import (
@@ -72,8 +73,10 @@ from voice_agent.services import (
     build_vad,
 )
 from voice_agent.tools import herramientas_activas
+from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings, get_settings
 from voice_agent_core.runtime import RuntimeConfig, cargar_runtime
+from voice_agent_core.rutas import ruta_log_agente
 
 #: Lo que se añade al prompt del sistema en una llamada por navegador. Igual
 #: que en telefonía, sustituye el contexto de "estás en la habitación": quien
@@ -206,6 +209,17 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
     try:
         stt, llm, tts = await servicios.tomar()
 
+        # Recursos POR LLAMADA: el retriever es compartido (solo lectura),
+        # pero la traza documental pertenece a esta conversación — es lo que
+        # permite verificar qué documento respaldó cada respuesta.
+        recursos = None
+        if servicios.recursos is not None:
+            recursos = AppResources(
+                settings=settings,
+                retriever=servicios.recursos.retriever,
+                traza=TrazaLlamada(settings.data_dir),
+            )
+
         transporte = SmallWebRTCTransport(
             webrtc_connection=conexion,
             params=TransportParams(
@@ -227,7 +241,7 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
             # anunciar una herramienta que no puede funcionar hace que el
             # modelo diga que la ha consultado (ver docs/herramientas.md).
             tools=herramientas_activas(runtime.herramientas_desactivadas, incluir_telefonia=False)
-            if servicios.recursos is not None
+            if recursos is not None
             else NOT_GIVEN,
         )
         agregador = LLMContextAggregatorPair(
@@ -247,6 +261,12 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
         if servicios.banco is not None:
             muletillas = FillerProcessor(servicios.banco, settings)
 
+        # Tras la salida de audio: por ahí pasan los frames de habla del bot
+        # (es el hueco donde el pipeline de sala pone su controlador de
+        # compuerta), que son los que cierran la medición voz-a-voz.
+        id_llamada = recursos.traza.id_llamada if recursos and recursos.traza else "sin-id"
+        metricas = MetricsRecorder(settings.data_dir, id_llamada)
+
         pipeline = Pipeline(
             [
                 transporte.input(),
@@ -256,6 +276,7 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
                 *([muletillas] if muletillas else []),
                 tts,
                 transporte.output(),
+                metricas,
                 agregador.assistant(),
             ]
         )
@@ -271,7 +292,7 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
                 enable_metrics=True,
                 enable_usage_metrics=True,
             ),
-            app_resources=servicios.recursos,
+            app_resources=recursos,
         )
 
         saludo = runtime.prompt.saludo_inicial
@@ -290,7 +311,11 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
             await worker.cancel()
 
         logger.info("Pipeline web montado; esperando audio del navegador")
-        await WorkerRunner().run(worker)
+        anotar_evento(settings.data_dir, "llamada_inicio", id_llamada=id_llamada)
+        try:
+            await WorkerRunner().run(worker)
+        finally:
+            anotar_evento(settings.data_dir, "llamada_fin", id_llamada=id_llamada)
     except Exception:
         logger.exception("El pipeline de la llamada web murió")
     finally:
@@ -317,7 +342,8 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def _vida(_app: FastAPI) -> AsyncIterator[None]:
-        setup_logging(config.log_level)
+        # A fichero además de a consola: el panel sigue el log desde ahí.
+        setup_logging(config.log_level, archivo=ruta_log_agente(config.data_dir))
         runtime = cargar_runtime(config.data_dir)
         servicios = ServiciosWeb(config, runtime)
         servicios.precargar()

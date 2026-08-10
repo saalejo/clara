@@ -73,6 +73,26 @@ def ruta_bitacora_tareas(data_dir: Path) -> Path:
     return dir_tareas(data_dir) / NOMBRE_BITACORA_TAREAS
 
 
+def dir_evaluaciones(data_dir: Path) -> Path:
+    """Carpeta de las evaluaciones clínicas: alertas, resúmenes y trazas."""
+    return data_dir / "evaluaciones"
+
+
+def dir_alertas(data_dir: Path) -> Path:
+    """Alertas de escalamiento, un JSON por alerta registrada."""
+    return dir_evaluaciones(data_dir) / "alertas"
+
+
+def dir_resumenes(data_dir: Path) -> Path:
+    """Resúmenes estructurados de llamada, un JSON por llamada terminada."""
+    return dir_evaluaciones(data_dir) / "resumenes"
+
+
+def dir_trazas(data_dir: Path) -> Path:
+    """Trazas de consultas al RAG, un JSONL por llamada."""
+    return dir_evaluaciones(data_dir) / "trazas"
+
+
 def ruta_estado(data_dir: Path) -> Path:
     """Lo que el agente publica sobre sí mismo tras arrancar."""
     return dir_config(data_dir) / NOMBRE_ESTADO

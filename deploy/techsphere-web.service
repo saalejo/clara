@@ -1,0 +1,23 @@
+# La interfaz de llamada por navegador (compuerta G4 del reto), en NATIVO.
+#
+# A diferencia del proyecto original, aquí no hay contenedor: el reto pide un
+# levantamiento reproducible en minutos y la imagen del agente tarda ~20 min en
+# construirse en la placa. `uv run` sobre el checkout es igual de reproducible
+# (uv.lock) y arranca en segundos.
+#
+# Instalación:
+#   cp deploy/clara-web.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now clara-web
+[Unit]
+Description=Agente de seguimiento postoperatorio - llamada por navegador
+After=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/clara
+ExecStart=%h/.local/bin/uv run uvicorn --factory voice_agent.web:crear_app --host 0.0.0.0 --port 7860
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

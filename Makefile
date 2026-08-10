@@ -131,6 +131,10 @@ run:  ## Arranca el agente en local (fuera del contenedor)
 run-web:  ## Arranca la interfaz de llamada por navegador (puerto 7860)
 	uv run uvicorn --factory voice_agent.web:crear_app --host 0.0.0.0 --port 7860
 
+.PHONY: metricas
+metricas:  ## Agrega las métricas medidas (latencia, tokens, coste) para el README
+	uv run python scripts/metricas.py
+
 # --- Panel de control ---------------------------------------------------------
 
 # El panel necesita su propio fichero de entorno, distinto del del agente. El

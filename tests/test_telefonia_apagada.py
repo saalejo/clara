@@ -19,6 +19,8 @@ from voice_agent_core.config import ModoTelefonia, Settings
 
 NOMBRES_DE_SIEMPRE = {
     "buscar_en_documentos",
+    "registrar_alerta",
+    "finalizar_llamada",
     "obtener_fecha_hora",
     "estado_del_sistema",
     "guardar_respuestas",
@@ -34,12 +36,12 @@ class TestElCatalogoNoCambia:
         activas = herramientas_activas(set())
         assert {nombre_de(h) for h in activas} == NOMBRES_DE_SIEMPRE
 
-    def test_el_registro_principal_sigue_teniendo_cuatro(self) -> None:
-        assert len(HERRAMIENTAS) == 4
+    def test_el_registro_principal_sigue_teniendo_seis(self) -> None:
+        assert len(HERRAMIENTAS) == 6
 
-    def test_con_telefonia_hay_once(self) -> None:
+    def test_con_telefonia_hay_trece(self) -> None:
         activas = herramientas_activas(set(), incluir_telefonia=True)
-        assert len(activas) == 11
+        assert len(activas) == 13
         assert {nombre_de(h) for h in activas} > NOMBRES_DE_SIEMPRE
 
     def test_el_panel_puede_apagar_una_de_telefono(self) -> None:
@@ -53,7 +55,7 @@ class TestElCatalogoNoCambia:
         """Que nadie pueda mutar el registro por accidente."""
         activas = herramientas_activas(set(), incluir_telefonia=True)
         activas.clear()
-        assert len(HERRAMIENTAS) == 4
+        assert len(HERRAMIENTAS) == 6
 
 
 class TestElSondeo:

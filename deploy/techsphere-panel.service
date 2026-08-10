@@ -1,0 +1,24 @@
+# La consola de administración (Django), en NATIVO.
+#
+# Lee su entorno de .env.panel (claves del panel; el del agente NO se monta) y
+# apunta los botones de servicio a las unidades clara-*.
+#
+# Instalación:
+#   cp deploy/clara-panel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now clara-panel
+[Unit]
+Description=Agente de seguimiento postoperatorio - consola de administracion
+After=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/clara
+EnvironmentFile=%h/clara/.env.panel
+Environment=PANEL_UNIDAD_AGENTE=clara-web.service
+Environment=PANEL_UNIDAD_INGESTA=clara-ingest.service
+ExecStart=%h/.local/bin/uv run python -m voice_agent_panel servir
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

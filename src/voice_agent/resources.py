@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from voice_agent.rag.retriever import Retriever
 from voice_agent.telefonia import ClienteTelefonia
+from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings
 
 
@@ -32,8 +33,13 @@ class AppResources:
             no tiene teléfono. Es opcional y va al final a propósito: así los
             tests que construyen `AppResources` a mano siguen valiendo sin
             tocarlos, y un agente sin puente es exactamente el de siempre.
+        traza: El registro documental de la llamada en curso, o `None` fuera
+            de una llamada. Lo crea `web.py` por conexión: la trazabilidad es
+            de la llamada, no del proceso, así que dos llamadas seguidas no
+            pueden compartirla.
     """
 
     settings: Settings
     retriever: Retriever
     telefonia: ClienteTelefonia | None = None
+    traza: TrazaLlamada | None = None

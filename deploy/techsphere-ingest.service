@@ -1,0 +1,21 @@
+# La reindexación del corpus, lanzada por el botón "Reindexar" del panel.
+#
+# El panel no ejecuta comandos: arranca esta unidad oneshot por D-Bus (ver
+# packages/panel/src/voice_agent_panel/control.py) y sigue su estado. Sin esta
+# unidad instalada, el conocimiento vivo (compuerta G5) muere en el botón.
+#
+# Instalación:
+#   cp deploy/clara-ingest.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+[Unit]
+Description=Agente de seguimiento postoperatorio - reindexado del corpus
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/clara
+ExecStart=%h/.local/bin/uv run python -m voice_agent.rag.ingest
+# El agente relee las colecciones en cada consulta, así que no hay que
+# reiniciar nada al terminar: el conocimiento nuevo aparece en caliente.
+
+[Install]
+WantedBy=default.target

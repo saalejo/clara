@@ -18,17 +18,23 @@ def test_la_lista_devuelta_es_una_copia() -> None:
     # Si fuera la misma lista, filtrar en un sitio mutaría el registro global.
     activas = herramientas_activas(frozenset())
     activas.clear()
-    assert len(HERRAMIENTAS) == 4
+    assert len(HERRAMIENTAS) == 6
 
 
 def test_desactivar_una_la_quita() -> None:
     nombres = {nombre_de(h) for h in herramientas_activas({"estado_del_sistema"})}
-    assert nombres == {"buscar_en_documentos", "obtener_fecha_hora", "guardar_respuestas"}
+    assert nombres == {
+        "buscar_en_documentos",
+        "registrar_alerta",
+        "finalizar_llamada",
+        "obtener_fecha_hora",
+        "guardar_respuestas",
+    }
 
 
 def test_un_nombre_desconocido_no_molesta() -> None:
     # Puede venir de una versión anterior o de un servidor MCP que ya no está.
-    assert len(herramientas_activas({"herramienta_fantasma"})) == 4
+    assert len(herramientas_activas({"herramienta_fantasma"})) == 6
 
 
 def test_se_pueden_desactivar_todas() -> None:
