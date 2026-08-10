@@ -20,6 +20,7 @@ from voice_agent.rag.retriever import Retriever
 from voice_agent.telefonia import ClienteTelefonia
 from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings
+from voice_agent_core.evaluaciones import Alerta
 
 
 @dataclass
@@ -43,3 +44,9 @@ class AppResources:
     retriever: Retriever
     telefonia: ClienteTelefonia | None = None
     traza: TrazaLlamada | None = None
+    #: La última alerta registrada en esta llamada, para el resumen de
+    #: respaldo si el paciente cuelga sin despedirse.
+    ultima_alerta: Alerta | None = None
+    #: Si el modelo llegó a guardar el resumen con `finalizar_llamada`. Cuando
+    #: no, el pipeline escribe uno de respaldo al desmontarse.
+    resumen_guardado: bool = False

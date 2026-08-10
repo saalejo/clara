@@ -117,6 +117,9 @@ async def registrar_alerta(
         )
         return
 
+    # Para el resumen de respaldo si el paciente cuelga sin despedirse.
+    recursos.ultima_alerta = alerta
+
     logger.info(f"[herramienta] registrar_alerta({nivel_valido}) -> {ruta.name}")
     await params.result_callback(
         {
@@ -180,6 +183,7 @@ async def finalizar_llamada(
         )
         return
 
+    recursos.resumen_guardado = True
     logger.info(f"[herramienta] finalizar_llamada -> {ruta.name}")
     await params.result_callback({"guardado": True, "fichero": ruta.name})
 

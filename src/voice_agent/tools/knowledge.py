@@ -62,21 +62,33 @@ async def buscar_en_documentos(params: FunctionCallParams, consulta: str) -> Non
     if recursos.traza is not None:
         recursos.traza.registrar(consulta, pasajes)
 
+    temas = recursos.retriever.temas_disponibles()
+    cobertura = (
+        f"Cirugías cubiertas por la base documental: {', '.join(temas)}. "
+        "Si la cirugía del paciente NO está en esa lista, dile claramente que "
+        "tus protocolos no cubren su cirugía y NUNCA atribuyas lo que "
+        "encuentres a guías de esa cirugía: cualquier recomendación que des "
+        "preséntala como precaución general y remite a su equipo médico."
+    )
+
     if not pasajes:
         await params.result_callback(
             {
                 "resultados": (
-                    "La base de conocimiento no contiene información relevante "
-                    "para esa consulta. Dilo con naturalidad, no te inventes la "
-                    "respuesta, y si es un tema clínico remite al paciente a su "
-                    "equipo médico."
+                    cobertura + "\n\nLa base de conocimiento no contiene "
+                    "información relevante para esa consulta. Dilo con "
+                    "naturalidad, no te inventes la respuesta, y si es un tema "
+                    "clínico remite al paciente a su equipo médico."
                 )
             }
         )
         return
 
     bloques = [
-        f"[{i}] (fuente: {p.origen}, similitud {p.similitud:.2f})\n{p.texto}"
+        f"[{i}] (fuente: {p.origen}, tema: {p.tema or 'general'}, similitud {p.similitud:.2f})\n"
+        f"{p.texto}"
         for i, p in enumerate(pasajes, start=1)
     ]
-    await params.result_callback({"resultados": _BLINDAJE + "\n\n" + "\n\n".join(bloques)})
+    await params.result_callback(
+        {"resultados": cobertura + "\n\n" + _BLINDAJE + "\n\n" + "\n\n".join(bloques)}
+    )

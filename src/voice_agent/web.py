@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -75,8 +76,9 @@ from voice_agent.services import (
 from voice_agent.tools import herramientas_activas
 from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings, get_settings
+from voice_agent_core.evaluaciones import ResumenLlamada
 from voice_agent_core.runtime import RuntimeConfig, cargar_runtime
-from voice_agent_core.rutas import ruta_log_agente
+from voice_agent_core.rutas import dir_resumenes, escribir_json_atomico, ruta_log_agente
 
 #: Lo que se añade al prompt del sistema en una llamada por navegador. Igual
 #: que en telefonía, sustituye el contexto de "estás en la habitación": quien
@@ -198,6 +200,66 @@ class ServiciosWeb:
         return trio
 
 
+def _transcripcion_de(contexto: LLMContext) -> list[str]:
+    """Extrae la conversación hablada del contexto, sin herramientas ni sistema."""
+    lineas: list[str] = []
+    for mensaje in contexto.messages:
+        rol = mensaje.get("role") if isinstance(mensaje, dict) else None
+        contenido = mensaje.get("content") if isinstance(mensaje, dict) else None
+        if rol in ("user", "assistant") and isinstance(contenido, str) and contenido.strip():
+            quien = "paciente" if rol == "user" else "agente"
+            lineas.append(f"{quien}: {contenido.strip()}")
+    return lineas
+
+
+def _resumen_de_respaldo(recursos: AppResources, contexto: LLMContext) -> None:
+    """Persiste un resumen mínimo si la llamada terminó sin despedida.
+
+    Los pacientes (y los jueces) cuelgan sin avisar, y "qué queda al terminar
+    la llamada" no puede depender de que al modelo le dé tiempo a llamar a
+    `finalizar_llamada`. Este respaldo no redacta nada: deja los hechos que el
+    sistema ya tiene —la última alerta, la traza documental y la transcripción
+    cruda— para que el equipo médico no pierda la llamada.
+
+    Nunca lanza: se ejecuta durante el desmontaje del pipeline y un fallo aquí
+    no debe enmascarar el motivo real del cierre.
+    """
+    try:
+        transcripcion = _transcripcion_de(contexto)
+        if not transcripcion or recursos.resumen_guardado:
+            return
+        alerta = recursos.ultima_alerta
+        momento = datetime.now()
+        resumen = ResumenLlamada(
+            id_llamada=recursos.traza.id_llamada if recursos.traza else "sin-traza",
+            momento=momento.isoformat(timespec="seconds"),
+            paciente_y_procedimiento=(
+                "No registrado: la llamada terminó sin despedida. Ver transcripción."
+            ),
+            sintomas=alerta.sintomas if alerta else "Ver transcripción.",
+            decision=(
+                f"Triaje {alerta.nivel} registrado como alerta ({alerta.justificacion})"
+                if alerta
+                else "La llamada terminó antes de registrar un triaje."
+            ),
+            proximos_pasos=(
+                "Revisar la alerta registrada y contactar al paciente."
+                if alerta
+                else "Revisar la transcripción y valorar si procede contactar al paciente."
+            ),
+            documentos_consultados=(
+                recursos.traza.documentos_consultados if recursos.traza else []
+            ),
+            transcripcion=transcripcion,
+        )
+        carpeta = dir_resumenes(recursos.settings.data_dir)
+        ruta = carpeta / f"{momento:%Y%m%d-%H%M%S}-respaldo.json"
+        escribir_json_atomico(ruta, resumen.model_dump(mode="json"))
+        logger.info(f"Resumen de respaldo persistido: {ruta.name}")
+    except Exception:
+        logger.exception("No se pudo escribir el resumen de respaldo")
+
+
 async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -> None:
     """Monta el pipeline sobre la conexión WebRTC y conversa hasta que cuelguen.
 
@@ -316,6 +378,8 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
             await WorkerRunner().run(worker)
         finally:
             anotar_evento(settings.data_dir, "llamada_fin", id_llamada=id_llamada)
+            if recursos is not None:
+                _resumen_de_respaldo(recursos, contexto)
     except Exception:
         logger.exception("El pipeline de la llamada web murió")
     finally:

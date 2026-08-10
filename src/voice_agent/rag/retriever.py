@@ -135,6 +135,18 @@ class Retriever:
         """Número de fragmentos indexados, sumando todos los temas."""
         return sum(c.count() for c in self._colecciones().values())
 
+    def temas_disponibles(self) -> list[str]:
+        """Los temas indexados ahora mismo, releídos en caliente.
+
+        Lo usa la herramienta de búsqueda para decirle al modelo qué cubre la
+        base: sin esa lista, un pasaje de otra cirugía que pase el umbral de
+        distancia se disfraza de respuesta, y el modelo acaba atribuyendo la
+        información a guías que no existen (pasó en una llamada real con
+        una cirugía de cataratas: recuperó colecistitis y lo citó como "las
+        guías de cataratas").
+        """
+        return sorted(self._colecciones().keys())
+
     def buscar(self, consulta: str, *, top_k: int | None = None) -> list[Pasaje]:
         """Recupera los fragmentos más parecidos a la consulta.
 

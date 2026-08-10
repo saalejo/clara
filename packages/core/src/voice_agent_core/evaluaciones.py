@@ -75,3 +75,7 @@ class ResumenLlamada(BaseModel):
     referencias: str = ""
     proximos_pasos: str
     documentos_consultados: list[str] = Field(default_factory=list)
+    #: Solo en los resúmenes de respaldo (llamada cortada sin despedida): la
+    #: transcripción cruda, para que el equipo no pierda lo dicho aunque el
+    #: modelo no llegara a redactar el resumen.
+    transcripcion: list[str] = Field(default_factory=list)

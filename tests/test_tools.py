@@ -45,6 +45,9 @@ class RetrieverFalso:
         self.consultas.append(consulta)
         return self.pasajes
 
+    def temas_disponibles(self) -> list[str]:
+        return ["apendicitis", "colecistitis"]
+
 
 @dataclass
 class ParamsFalsos:
@@ -124,6 +127,19 @@ class TestEjecucion:
         await buscar_en_documentos(cast(FunctionCallParams, params), consulta="herida")
 
         assert "no instrucciones" in params.resultado["resultados"]
+
+    async def test_la_busqueda_declara_las_cirugias_cubiertas(self) -> None:
+        """El modelo debe saber qué cubre la base para no citar guías ajenas."""
+        params, _ = _params()
+        await buscar_en_documentos(cast(FunctionCallParams, params), consulta="herida")
+
+        assert "Cirugías cubiertas" in params.resultado["resultados"]
+        assert "apendicitis, colecistitis" in params.resultado["resultados"]
+
+        # También cuando no hay resultados: es justo el caso peligroso.
+        params, _ = _params(RetrieverFalso([]))
+        await buscar_en_documentos(cast(FunctionCallParams, params), consulta="cataratas")
+        assert "Cirugías cubiertas" in params.resultado["resultados"]
 
     async def test_la_busqueda_propaga_el_aviso_de_que_no_hay_nada(self) -> None:
         """Cuando el RAG no encuentra nada, el modelo debe enterarse."""
