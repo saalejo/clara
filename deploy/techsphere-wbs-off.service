@@ -1,0 +1,48 @@
+# Apaga wide-band-speech del adaptador Bluetooth en cada arranque.
+#
+# Con WBS activo, la negociación de códec con el TECNO POVA se atasca y el
+# audio SCO de las llamadas queda MUDO en ambos sentidos (0 paquetes, reset a
+# los ~20 s); con CVSD puro fluye. El ajuste no sobrevive al reinicio de la
+# placa, así que hay que reaplicarlo en cada arranque.
+#
+# La rareza que gobierna el diseño, diseccionada el 10-08-2026: **btmgmt
+# necesita un TTY.** Sin él, su bucle de eventos no funciona: con stdin en
+# /dev/null (lo que da systemd) expira SIN APLICAR el cambio, y con una
+# tubería aplica el cambio pero se queda colgado para siempre (32 ms de CPU
+# tras 10 minutos; los «90 s por orden bajo systemd» de la primera vez eran
+# el timeout matándolo). Con un pseudo-TTY de `script(1)` las tres órdenes
+# terminan limpias y al instante. El `timeout` queda de cinturón. Y el orden
+# importa: WBS solo se puede cambiar con el adaptador apagado — con él
+# encendido `btmgmt wbs off` "completa" sin cambiar nada.
+#
+# Es una unidad DEL SISTEMA (btmgmt necesita root) y un oneshot INDEPENDIENTE:
+# meterlo en el ExecStartPre del puente ciclaba el adaptador en bucle. Nadie
+# espera por ella; si el puente ya se había conectado, el ciclo de power lo
+# desconecta un momento y su reconexión automática (cada 30 s) lo recupera.
+# La verdad se comprueba al final con `btmgmt info`: la unidad falla si el
+# WBS sigue activo, para que un `systemctl status` lo cante.
+#
+# Instalación (como root):
+#   cp deploy/clara-wbs-off.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable clara-wbs-off
+[Unit]
+Description=Apaga wide-band-speech del Bluetooth (SCO mudo con WBS)
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=180
+ExecStart=/bin/sh -ec '\
+  for orden in "power off" "wbs off" "power on"; do \
+    timeout 20 script -qec "btmgmt $$orden" /dev/null || true; \
+  done; \
+  sleep 3; \
+  estado=$$(timeout 15 script -qec "btmgmt info" /dev/null | grep "current settings"); \
+  echo "estado final: $$estado"; \
+  case "$$estado" in *wide-band-speech*) echo "WBS SIGUE ACTIVO"; exit 1;; esac; \
+  case "$$estado" in *powered*) exit 0;; *) echo "adaptador apagado"; exit 1;; esac'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
