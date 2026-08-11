@@ -1,0 +1,23 @@
+# Renueva las credenciales TURN de Cloudflare (caducan a las 48 h) y reinicia
+# la interfaz web para que las lea — los servidores ICE se cargan al arrancar.
+#
+# Lo dispara `clara-turn.timer` a diario; renovar cada 24 h deja siempre
+# un día entero de margen: una renovación fallida (sin red, Cloudflare caído)
+# no rompe nada porque las credenciales anteriores siguen valiendo.
+#
+# `try-restart` y no `restart`: si el servicio web está parado a propósito, la
+# renovación no debe levantarlo. Y solo corre si la renovación fue bien — un
+# fallo del script no reinicia nada y las credenciales viejas siguen en pie.
+#
+# Instalación:
+#   cp deploy/clara-turn.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now clara-turn.timer
+[Unit]
+Description=Renovacion de credenciales TURN de Cloudflare
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/clara
+ExecStart=%h/.local/bin/uv run python scripts/renovar_turn.py
+ExecStartPost=/usr/bin/systemctl --user try-restart clara-web.service

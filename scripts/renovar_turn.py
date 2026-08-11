@@ -49,7 +49,14 @@ def main() -> int:
     peticion = urllib.request.Request(
         f"https://rtc.live.cloudflare.com/v1/turn/keys/{key_id}/credentials/generate-ice-servers",
         data=json.dumps({"ttl": 172800}).encode(),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            # El WAF de Cloudflare devuelve 403 al User-Agent por defecto de
+            # urllib ("Python-urllib/3.x"); la misma petición con curl pasa.
+            # Medido el 10-08-2026: por la mañana funcionaba, por la noche no.
+            "User-Agent": "clara-voice-agent/1.0 (renovar_turn)",
+        },
         method="POST",
     )
     with urllib.request.urlopen(peticion, timeout=30) as respuesta:

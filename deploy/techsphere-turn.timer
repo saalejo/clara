@@ -1,0 +1,15 @@
+# Dispara la renovación TURN a diario, a las 05:00: lejos de cualquier demo,
+# porque la renovación reinicia la interfaz web y eso corta una llamada en
+# curso. `Persistent=true` recupera el disparo perdido si la placa estaba
+# apagada a esa hora — tras un apagón largo las credenciales pueden haber
+# caducado y conviene renovar nada más arrancar.
+[Unit]
+Description=Renovacion diaria de las credenciales TURN (caducan a las 48 h)
+
+[Timer]
+OnCalendar=*-*-* 05:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
