@@ -158,14 +158,15 @@ async def test_la_peticion_en_marcha_no_cancela_la_muletilla(tmp_path: Path) -> 
 
 
 async def test_el_primer_token_cancela_la_muletilla(tmp_path: Path) -> None:
-    # Margen holgado entre el token (a +0.05 s) y la muletilla (a +0.5 s): con
+    # Margen holgado entre el token (a +0.05 s) y la muletilla (a +1 s): con
     # 0.2 s el test flaqueaba en la placa cargada, donde un sleep de 50 ms
-    # puede estirarse más que la diferencia.
+    # puede estirarse más que la diferencia, y con 0.5 s volvió a flaquear
+    # dentro de la batería completa (dos corridas seguidas el 10-08).
     tipos = await _correr_guion(
         tmp_path,
         [(0.1, UserStoppedSpeakingFrame()), (0.05, LLMTextFrame("Hola"))],
-        espera=1.0,
-        retardo_muletilla=0.5,
+        espera=1.5,
+        retardo_muletilla=1.0,
     )
     assert "TTSAudioRawFrame" not in tipos
 
