@@ -755,3 +755,40 @@ Lo que le queda al contestador, ya como pulido:
 * **mSBC** para ancho de banda, cuando el resto esté pulido.
 * El modo por defecto sigue siendo `off`: encender `agente` en producción es
   una decisión pendiente, porque le quita el audio de las llamadas al móvil.
+
+## El historial de pacientes: la memoria entre llamadas
+
+Desde el 10-08 el agente recuerda a quien llama, por número de teléfono, en
+una base SQLite del volumen de datos (`data/evaluaciones/historial.sqlite3`,
+módulo `voice_agent_core.historial`). El flujo completo:
+
+* **Al montar la llamada** (entrante o misión saliente) se registra la fila
+  con el mismo `id_llamada` que llevan la traza, la alerta y el resumen — al
+  principio y no al colgar, para que una llamada caída también cuente. Cada
+  llamada telefónica estrena además su propia `TrazaLlamada`, lo que cerró el
+  hueco de las «alertas sin traza».
+* **La ficha del número entra en el prompt** (`PROMPT_HISTORIAL_PREVIO`):
+  cuántas veces llamó y qué quedó de la última — con la orden de dar
+  continuidad pero confirmar, porque el historial es del teléfono, no de la
+  voz que contesta. Vale para entrantes Y para misiones: probado en vivo,
+  Clara devolvió la llamada diciendo «hace un rato se cortó nuestra
+  comunicación».
+* **Las anotaciones llegan solas**: `registrar_alerta` fija el color del
+  triaje en la fila en el instante de decidirse; `finalizar_llamada` completa
+  procedimiento, decisión y próximos pasos; y si la llamada muere sin
+  despedida, el **resumen de respaldo** (`voice_agent/respaldo.py`, ahora
+  compartido con el pipeline web y enganchado también al desmontaje del SCO)
+  anota lo que haya.
+* Los números de relleno (WhatsApp `10000000`) y el número oculto **no abren
+  ficha**: mezclarían pacientes distintos. Ver `numero_identificable`.
+* El modelo puede pedir más con la herramienta `historial_paciente`, y el
+  panel lo enseña en su página **Pacientes** (solo lectura).
+
+Y una trampa nueva de las misiones, pagada con una llamada real: **el móvil
+abre el SCO en el instante de marcar** —por él viaja el tono de llamada—, así
+que la confirmación `EN_CURSO` tarda lo que tarde el humano en descolgar
+(dieciséis segundos, medidos). La correlación de `MisionesLlamada` espera
+mientras la llamada registrada siga sonando y solo se rinde si desaparece, si
+otra llamada en curso reclama el audio o si la misión caduca; la versión de
+reintentos fijos (1,5 s) atendió la misión como entrante y el vigilante la
+colgó a los sesenta segundos en mitad de la conversación.

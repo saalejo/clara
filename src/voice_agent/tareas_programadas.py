@@ -79,12 +79,17 @@ SONDEO_LLAMADA_SECS = 5.0
 CADUCIDAD_MISION_SECS = 120.0
 
 #: El SCO y el estado `EN_CURSO` de oFono son dos subsistemas distintos —audio
-#: HFP contra propiedad D-Bus— y no cambian en el mismo instante. Medido en
-#: una llamada real: el audio llegó un segundo después de marcar, con la
-#: llamada todavía en `SONANDO`, y una comprobación única perdió la misión sin
-#: remedio para el resto de la llamada. Estos reintentos cubren ese margen.
-REINTENTOS_CORRELACION = 5
-ESPERA_ENTRE_REINTENTOS_SECS = 0.3
+#: HFP contra propiedad D-Bus— y no cambian en el mismo instante. Peor aún,
+#: medido en una llamada real de misión: **el móvil abre el SCO en el instante
+#: de marcar** —por él viaja el tono de llamada— y la confirmación `EN_CURSO`
+#: tarda lo que tarde el humano en descolgar, dieciséis segundos aquella vez.
+#: Un puñado de reintentos fijos (5 de 0,3 s, la versión anterior) perdió la
+#: misión: la llamada se atendió como entrante y el vigilante la colgó a los
+#: sesenta segundos creyendo que nadie había contestado. Por eso la
+#: correlación ahora ESPERA mientras la llamada registrada siga viva y
+#: sonando, sondeando a este ritmo, y solo se rinde si la llamada desaparece,
+#: si el audio resulta ser de OTRA llamada, o si la misión caduca.
+SONDEO_CONFIRMACION_SECS = 0.5
 
 
 @dataclass
@@ -146,43 +151,56 @@ class MisionesLlamada:
         self._pendiente = None
 
     async def tomar_si_en_curso(self, cliente: ClienteTelefonia | None) -> MisionPendiente | None:
-        """Devuelve la misión si su llamada está `EN_CURSO`; si no, `None`.
+        """Devuelve la misión si su llamada llega a `EN_CURSO`; si no, `None`.
 
         La consulta al puente es lo que evita el falso positivo: acaba de
         llegar audio SCO, pero ¿es de NUESTRA llamada saliente? Solo si el id
         registrado sigue vivo y en curso. No marca la misión dos veces:
         consumida una vez, las siguientes llamadas devuelven `None`.
 
-        Reintenta unas cuantas veces antes de rendirse (ver
-        `REINTENTOS_CORRELACION`): el estado puede seguir en `SONANDO` un
-        instante después de que el SCO ya esté entregado. Un error del
-        puente, en cambio, no se reintenta —si está caído, reintentar de
+        Y espera todo lo que haga falta (ver `SONDEO_CONFIRMACION_SECS`): el
+        móvil abre el SCO **al marcar** —por él viaja el tono— y `EN_CURSO`
+        no llega hasta que el otro lado descuelga, segundos o decenas de
+        segundos después. Mientras la llamada registrada exista y no haya
+        otra en curso que reclame el audio, se sigue esperando; la espera es
+        segura porque el núcleo del transporte ya está drenando el socket.
+        Se rinde si la llamada desaparece (rechazada o colgada), si aparece
+        OTRA llamada en curso (el SCO es suyo), o si la misión caduca. Un
+        error del puente no se reintenta —si está caído, reintentar de
         inmediato no lo arregla— y se cae a "no es una misión" sin más.
         """
         pendiente = self._pendiente
         if pendiente is None or pendiente.consumida or cliente is None:
             return None
-        if pendiente.caducada:
-            logger.info(f"[tareas] la misión '{pendiente.tarea.id}' caducó sin audio SCO")
-            self._pendiente = None
-            return None
-        for intento in range(REINTENTOS_CORRELACION):
+        while not pendiente.caducada:
             try:
                 estado = await cliente.estado()
             except ErrorTelefonia as e:
                 logger.warning(f"[tareas] no pude confirmar la llamada de la misión: {e}")
                 return None
             llamada = next((c for c in estado.llamadas if c.id == pendiente.id_llamada), None)
-            if llamada is not None and llamada.estado is EstadoLlamada.EN_CURSO:
+            if llamada is None:
+                logger.info(
+                    f"[tareas] la llamada de '{pendiente.tarea.id}' ya no existe; "
+                    "este audio no es de la misión"
+                )
+                return None
+            if llamada.estado is EstadoLlamada.EN_CURSO:
                 pendiente.consumida = True
                 logger.info(f"[tareas] la llamada {llamada.id} es la misión '{pendiente.tarea.id}'")
                 return pendiente
-            if intento < REINTENTOS_CORRELACION - 1:
-                await asyncio.sleep(ESPERA_ENTRE_REINTENTOS_SECS)
-        logger.warning(
-            f"[tareas] llegó audio de llamada pero '{pendiente.tarea.id}' nunca confirmó "
-            "EN_CURSO; se atiende como si no fuera una misión"
-        )
+            if any(
+                c.id != pendiente.id_llamada and c.estado is EstadoLlamada.EN_CURSO
+                for c in estado.llamadas
+            ):
+                logger.info(
+                    f"[tareas] hay otra llamada en curso; el audio no es de "
+                    f"'{pendiente.tarea.id}', que sigue {llamada.estado}"
+                )
+                return None
+            await asyncio.sleep(SONDEO_CONFIRMACION_SECS)
+        logger.info(f"[tareas] la misión '{pendiente.tarea.id}' caducó sin confirmar EN_CURSO")
+        self._pendiente = None
         return None
 
 

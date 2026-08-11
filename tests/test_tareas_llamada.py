@@ -140,27 +140,37 @@ class TestLaCorrelacion:
         # Consumida una vez, no se entrega dos veces.
         assert await misiones.tomar_si_en_curso(cast(Any, cliente)) is None
 
-    async def test_reintenta_hasta_que_confirma_en_curso(self) -> None:
-        # El caso real que motivó los reintentos: el SCO llega con la llamada
-        # todavía en SONANDO —oFono y el audio no cambian en el mismo
-        # instante— y la confirmación EN_CURSO tarda un par de sondeos.
+    async def test_espera_sonando_lo_que_tarde_el_humano_en_descolgar(self) -> None:
+        # El caso real que motivó la espera: el móvil abre el SCO AL MARCAR
+        # —por él viaja el tono— y EN_CURSO no llega hasta que descuelgan,
+        # muchos sondeos después. Cinco reintentos fijos perdieron una misión
+        # real (se atendió como entrante y el vigilante la colgó a los 60 s).
         misiones = MisionesLlamada()
         misiones.registrar(tarea_llamada(), "voicecall01")
         cliente = ClienteFalso(
-            estados=[
-                [llamada(estado=EstadoLlamada.SONANDO)],
-                [llamada(estado=EstadoLlamada.SONANDO)],
-                [llamada()],
-            ]
+            estados=[[llamada(estado=EstadoLlamada.SONANDO)]] * 20 + [[llamada()]]
         )
         mision = await misiones.tomar_si_en_curso(cast(Any, cliente))
         assert mision is not None and mision.tarea.id == "revision-abuela"
 
-    async def test_sonando_todavia_no_es_en_curso(self) -> None:
-        # Si nunca llega a EN_CURSO, se agotan los reintentos y se rinde.
+    async def test_si_la_llamada_desaparece_se_rinde(self) -> None:
+        # Rechazada mientras sonaba: la llamada se esfuma y el audio que
+        # llegó no puede ser de la misión.
         misiones = MisionesLlamada()
         misiones.registrar(tarea_llamada(), "voicecall01")
         cliente = ClienteFalso(estados=[[llamada(estado=EstadoLlamada.SONANDO)]])
+        assert await misiones.tomar_si_en_curso(cast(Any, cliente)) is None
+
+    async def test_otra_en_curso_se_lleva_el_audio_sin_esperar(self) -> None:
+        # Nuestra saliente sigue sonando pero hay OTRA llamada en curso: el
+        # SCO es de esa otra y la misión no debe bloquear su atención.
+        misiones = MisionesLlamada()
+        misiones.registrar(tarea_llamada(), "voicecall01")
+        cliente = ClienteFalso(
+            estados=[
+                [llamada(estado=EstadoLlamada.SONANDO), llamada(id_="voicecall02")],
+            ]
+        )
         assert await misiones.tomar_si_en_curso(cast(Any, cliente)) is None
 
     async def test_una_entrante_no_se_lleva_la_mision(self) -> None:
@@ -224,7 +234,7 @@ def _tiempos_cortos(monkeypatch: pytest.MonkeyPatch) -> None:
     # Holgado frente a los 0.01 del sondeo: en una placa cargada, un timeout
     # demasiado justo colgaría la llamada del test antes de "descolgarla".
     monkeypatch.setattr(tareas_programadas, "TIMEOUT_SALIENTE_SECS", 0.3)
-    monkeypatch.setattr(tareas_programadas, "ESPERA_ENTRE_REINTENTOS_SECS", 0.001)
+    monkeypatch.setattr(tareas_programadas, "SONDEO_CONFIRMACION_SECS", 0.001)
 
 
 class TestElFlujoDeLlamada:
