@@ -23,12 +23,14 @@ from django.views.decorators.http import require_POST
 from voice_agent_core import board, corpus
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
 from voice_agent_core.estado import leer_estado
+from voice_agent_core.historial import HistorialPacientes
 from voice_agent_core.runtime import EventoHook
 from voice_agent_core.rutas import (
     dir_alertas,
     dir_resultados_tareas,
     dir_resumenes,
     ruta_bitacora_tareas,
+    ruta_historial,
 )
 from voice_agent_panel import agenda, control, tailer
 from voice_agent_panel.context_processors import CLAVE_SESION_PERFIL, perfil_en_edicion
@@ -730,6 +732,21 @@ def evaluaciones(request: HttpRequest) -> HttpResponse:
             "alertas": _leer_json_de(dir_alertas(django_settings.DATA_DIR)),
             "resumenes": _leer_json_de(dir_resumenes(django_settings.DATA_DIR)),
         },
+    )
+
+
+def pacientes(request: HttpRequest) -> HttpResponse:
+    """El historial de pacientes: qué números han llamado y qué pasó cada vez.
+
+    Sale de la base SQLite que el agente escribe en el volumen compartido
+    (`data/evaluaciones/historial.sqlite3`); el panel solo lee, igual que con
+    las evaluaciones. Si el fichero no existe todavía, la página sale vacía.
+    """
+    historial = HistorialPacientes(ruta_historial(django_settings.DATA_DIR))
+    return render(
+        request,
+        "panel/pacientes.html",
+        {"fichas": historial.pacientes(), "llamadas": historial.llamadas(limite=50)},
     )
 
 

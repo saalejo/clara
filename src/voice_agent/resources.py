@@ -21,6 +21,7 @@ from voice_agent.telefonia import ClienteTelefonia
 from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings
 from voice_agent_core.evaluaciones import Alerta
+from voice_agent_core.historial import HistorialPacientes
 
 
 @dataclass
@@ -50,3 +51,10 @@ class AppResources:
     #: Si el modelo llegó a guardar el resumen con `finalizar_llamada`. Cuando
     #: no, el pipeline escribe uno de respaldo al desmontarse.
     resumen_guardado: bool = False
+    #: La memoria entre llamadas por número de teléfono, compartida por todo
+    #: el proceso, o `None` en un agente sin ella (los tests, `bot.py`).
+    historial: HistorialPacientes | None = None
+    #: El número del otro extremo de la llamada en curso, si el puente lo
+    #: identificó; vacío en el navegador o con número oculto. Es lo que ata
+    #: las anotaciones del historial a una ficha.
+    numero_llamada: str = ""

@@ -122,6 +122,39 @@ class TestFinalizarLlamada:
         assert datos["documentos_consultados"] == ["apendicitis/guia.pdf"]
         assert params.resultado["guardado"] is True
 
+    async def test_el_color_del_triaje_viene_de_la_alerta_no_del_modelo(
+        self, tmp_path: Path
+    ) -> None:
+        # La gravedad tiene que quedar inequívoca en el registro de la
+        # llamada: el campo `nivel` lo copia el sistema de la última alerta
+        # registrada, y la redacción libre de `decision` no puede sustituirlo.
+        params = _params(tmp_path)
+        await registrar_alerta(
+            cast(FunctionCallParams, params), nivel="rojo", sintomas="s", justificacion="j"
+        )
+        await finalizar_llamada(
+            cast(FunctionCallParams, params),
+            paciente_y_procedimiento="p",
+            sintomas="s",
+            decision="d",  # ni menciona el color
+            proximos_pasos="n",
+        )
+
+        (fichero,) = list(dir_resumenes(tmp_path).iterdir())
+        assert json.loads(fichero.read_text())["nivel"] == "rojo"
+
+    async def test_sin_alerta_el_nivel_queda_vacio(self, tmp_path: Path) -> None:
+        params = _params(tmp_path)
+        await finalizar_llamada(
+            cast(FunctionCallParams, params),
+            paciente_y_procedimiento="p",
+            sintomas="s",
+            decision="d",
+            proximos_pasos="n",
+        )
+        (fichero,) = list(dir_resumenes(tmp_path).iterdir())
+        assert json.loads(fichero.read_text())["nivel"] == ""
+
     async def test_sin_traza_el_resumen_se_guarda_igual(self, tmp_path: Path) -> None:
         params = _params(tmp_path, con_traza=False)
         await finalizar_llamada(

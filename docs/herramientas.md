@@ -5,11 +5,15 @@ lo que convierte un chatbot en un agente: en vez de responder solo con lo que
 tiene memorizado, puede consultar una base de datos, leer un sensor o llamar a
 una API.
 
-## Las tres herramientas actuales
+## Las siete herramientas del catálogo
 
 | Nombre | Qué hace | Por qué existe |
 |---|---|---|
 | `buscar_en_documentos` | Consulta la base de conocimiento (RAG) | Le da al agente conocimiento propio y actualizable sin reentrenar nada |
+| `registrar_alerta` | Persiste el triaje (verde/amarillo/rojo) en cuanto se decide | El falso negativo es la falla catastrófica: la alerta no puede esperar al final de la llamada |
+| `finalizar_llamada` | Guarda el resumen estructurado de la llamada | Los cinco campos de la rúbrica, más el color del triaje que copia el sistema de la alerta |
+| `historial_paciente` | Consulta las llamadas anteriores del número en curso | La memoria entre llamadas: quién llamó, qué triaje se decidió y qué quedó pendiente |
+| `guardar_respuestas` | Persiste las respuestas de un cuestionario de misión | Las tareas programadas tipo cuestionario necesitan dejar constancia |
 | `obtener_fecha_hora` | Devuelve la fecha y hora actuales | Un LLM no tiene reloj; si le preguntas la hora, se la inventa |
 | `estado_del_sistema` | Temperatura, memoria, carga y tiempo encendida | Ejemplo de herramienta que lee el mundo real, y de paso es útil |
 

@@ -9,8 +9,9 @@ from typing import Any, cast
 from pipecat.processors.aggregators.llm_context import LLMContext
 
 from voice_agent.resources import AppResources
+from voice_agent.respaldo import resumen_de_respaldo as _resumen_de_respaldo
+from voice_agent.respaldo import transcripcion_de as _transcripcion_de
 from voice_agent.traza import TrazaLlamada
-from voice_agent.web import _resumen_de_respaldo, _transcripcion_de
 from voice_agent_core.config import Settings
 from voice_agent_core.evaluaciones import Alerta, NivelAlerta
 from voice_agent_core.rutas import dir_resumenes

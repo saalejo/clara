@@ -10,7 +10,7 @@
 <h2>Alertas de triaje</h2>
 {% for a in alertas %}
 <div class="tarjeta">
-  <p><strong>{{ a.momento }}</strong> — nivel <strong>{{ a.nivel }}</strong>
+  <p><strong>{{ a.momento }}</strong> — <span class="triaje {{ a.nivel }}">{{ a.nivel }}</span>
     <span class="ayuda">({{ a.id_llamada }})</span></p>
   <p style="white-space:pre-wrap">{{ a.sintomas }}</p>
   <p class="ayuda" style="white-space:pre-wrap">{{ a.justificacion }}</p>
@@ -22,7 +22,10 @@
 <h2>Resúmenes de llamada</h2>
 {% for r in resumenes %}
 <div class="tarjeta">
-  <p><strong>{{ r.momento }}</strong> — {{ r.paciente_y_procedimiento }}
+  <p><strong>{{ r.momento }}</strong>
+    {% if r.nivel %}<span class="triaje {{ r.nivel }}">{{ r.nivel }}</span>
+    {% else %}<span class="triaje sin">sin triaje</span>{% endif %}
+    — {{ r.paciente_y_procedimiento }}
     <span class="ayuda">({{ r.id_llamada }})</span></p>
   <p style="white-space:pre-wrap"><strong>Síntomas:</strong> {{ r.sintomas }}</p>
   <p style="white-space:pre-wrap"><strong>Decisión:</strong> {{ r.decision }}</p>

@@ -95,6 +95,7 @@ class TestEsquemas:
             "obtener_fecha_hora",
             "estado_del_sistema",
             "guardar_respuestas",
+            "historial_paciente",
         }
 
     def test_la_busqueda_exige_el_argumento_consulta(self) -> None:

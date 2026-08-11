@@ -42,6 +42,7 @@ from pipecat.workers.runner import WorkerRunner
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
+from voice_agent.respaldo import resumen_de_respaldo
 from voice_agent.services import build_llm, build_stt, build_tts, build_turn_strategies
 from voice_agent.tareas_programadas import (
     MisionesLlamada,
@@ -52,7 +53,9 @@ from voice_agent.telefonia import ClienteTelefonia
 from voice_agent.telefonia_audio import TransporteSCO
 from voice_agent.telefonia_codec import FRECUENCIA_PIPELINE
 from voice_agent.tools import herramientas_activas
+from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings
+from voice_agent_core.historial import FichaPaciente, HistorialPacientes
 from voice_agent_core.runtime import RuntimeConfig
 from voice_agent_core.telefonia import Llamada
 
@@ -92,11 +95,39 @@ con esa persona — puede ser un familiar llamando desde su teléfono. Si el
 nombre de la agenda no parece el de una persona, pregunta el nombre como
 siempre. Una vez confirmado, no vuelvas a pedirle el nombre."""
 
+#: Se añade cuando el historial conoce el número — en entrantes Y en misiones.
+#: Mismo tono cauto que la identidad de agenda: el historial es del NÚMERO,
+#: no de la persona, y desde un mismo teléfono puede hablar un familiar.
+PROMPT_HISTORIAL_PREVIO = """
+
+Historial de este número: {total} llamada(s) de seguimiento registradas. La
+última, el {fecha}: {detalle}. Dale continuidad —pregunta cómo ha seguido
+desde entonces en vez de empezar de cero— pero confirma antes que hablas con
+la misma persona: el historial es del teléfono, no de quien contesta."""
+
+
+def _describir_ficha(ficha: FichaPaciente) -> str:
+    """Resume la última llamada de la ficha en una frase para el prompt."""
+    ultima = ficha.ultima
+    partes = []
+    if ultima.paciente_y_procedimiento:
+        partes.append(ultima.paciente_y_procedimiento)
+    if ultima.nivel:
+        partes.append(f"triaje {ultima.nivel}")
+    if ultima.decision:
+        partes.append(ultima.decision)
+    if ultima.proximos_pasos:
+        partes.append(f"próximos pasos: {ultima.proximos_pasos}")
+    if not partes:
+        return "sin detalles registrados (la llamada quedó sin resumen)"
+    return "; ".join(partes)
+
 
 def _prompt_de_llamada(
     runtime: RuntimeConfig,
     mision: MisionPendiente | None,
     llamada: Llamada | None = None,
+    ficha: FichaPaciente | None = None,
 ) -> str:
     """Compone el prompt del sistema del pipeline de esta llamada.
 
@@ -110,6 +141,8 @@ def _prompt_de_llamada(
             entrante, su `nombre_agenda` permite saludar al paciente por su
             nombre; en una misión no se usa, porque la tarea ya trae el
             contacto.
+        ficha: El historial del número, si ya llamó antes. Se añade tanto en
+            entrantes como en misiones: es la memoria entre llamadas.
     """
     base = runtime.prompt.prompt_sistema_efectivo
     if mision is None:
@@ -118,8 +151,15 @@ def _prompt_de_llamada(
             prompt += PROMPT_IDENTIDAD_AGENDA.format(
                 nombre=llamada.nombre_agenda, numero=llamada.numero or "desconocido"
             )
-        return prompt
-    return base + PROMPT_LLAMADA_MISION + instruccion_mision_llamada(mision.tarea)
+    else:
+        prompt = base + PROMPT_LLAMADA_MISION + instruccion_mision_llamada(mision.tarea)
+    if ficha is not None:
+        prompt += PROMPT_HISTORIAL_PREVIO.format(
+            total=ficha.total_llamadas,
+            fecha=ficha.ultima.momento[:10],
+            detalle=_describir_ficha(ficha),
+        )
+    return prompt
 
 
 async def atender_llamada(
@@ -205,9 +245,47 @@ async def _conversar(
 
     stt, llm, tts = await servicios.tomar()
 
+    # La identidad de la llamada para el historial: en una misión el número
+    # viene congelado en la tarea; en una entrante, del puente. La ficha se
+    # consulta ANTES de registrar la llamada actual, para que el prompt hable
+    # solo de las anteriores.
+    if mision is not None:
+        numero = mision.tarea.contacto_numero
+        nombre = mision.tarea.contacto_nombre
+        direccion = "mision"
+    else:
+        numero = llamada_actual.numero if llamada_actual is not None else ""
+        nombre = (llamada_actual.nombre_agenda or "") if llamada_actual is not None else ""
+        direccion = "entrante"
+
+    ficha: FichaPaciente | None = None
+    recursos = servicios.recursos
+    if recursos is not None:
+        # Una traza nueva por llamada: es lo que da a las alertas y resúmenes
+        # de teléfono un id propio en vez de "sin-traza", y al historial la
+        # clave con la que anotarles el triaje. El objeto de recursos es
+        # compartido, pero solo hay una llamada SCO a la vez.
+        recursos.traza = TrazaLlamada(settings.data_dir)
+        recursos.ultima_alerta = None
+        recursos.resumen_guardado = False
+        recursos.numero_llamada = numero
+        if recursos.historial is not None:
+            ficha = recursos.historial.ficha(numero)
+            recursos.historial.registrar_llamada(
+                recursos.traza.id_llamada, numero, direccion, nombre=nombre
+            )
+            if ficha is not None:
+                logger.info(
+                    f"[historial] el {numero} ya llamó {ficha.total_llamadas} vez/veces; "
+                    "el prompt lleva su ficha"
+                )
+
     contexto = LLMContext(
         messages=[
-            {"role": "system", "content": _prompt_de_llamada(runtime, mision, llamada_actual)}
+            {
+                "role": "system",
+                "content": _prompt_de_llamada(runtime, mision, llamada_actual, ficha),
+            }
         ],
         # Las mismas herramientas de la sala menos las de telefonía. Al pasarlas
         # aquí, Pipecat registra solo sus manejadores; llegan al RAG a través de
@@ -310,6 +388,12 @@ async def _conversar(
         with contextlib.suppress(asyncio.CancelledError):
             await vigia
         await transporte.nucleo.parar()
+        # Por teléfono se cuelga sin despedirse aún más que en el navegador —
+        # y la llamada puede caerse sola por cobertura—, así que el respaldo
+        # corre aquí igual: si el modelo no llegó a `finalizar_llamada`, la
+        # transcripción y la última alerta quedan en disco y en el historial.
+        if recursos is not None:
+            resumen_de_respaldo(recursos, contexto)
 
 
 class ServiciosDeLlamada:
@@ -327,7 +411,11 @@ class ServiciosDeLlamada:
     """
 
     def __init__(
-        self, settings: Settings, runtime: RuntimeConfig, retriever: Retriever | None = None
+        self,
+        settings: Settings,
+        runtime: RuntimeConfig,
+        retriever: Retriever | None = None,
+        historial: HistorialPacientes | None = None,
     ) -> None:
         """Prepara el almacén sin cargar nada todavía.
 
@@ -339,10 +427,13 @@ class ServiciosDeLlamada:
                 abriéndose a la vez en hilos distintos corrompen su caché
                 interna; el buscador es de solo lectura y compartirlo es
                 seguro.
+            historial: La memoria entre llamadas por número, compartida por
+                el proceso; las herramientas la reciben en los recursos.
         """
         self._settings = settings
         self._runtime = runtime
         self._retriever = retriever
+        self._historial = historial
         self._listos: tuple[Any, Any, Any] | None = None
         self._cargando: asyncio.Task[None] | None = None
         self._banco: FillerBank | None = None
@@ -392,6 +483,7 @@ class ServiciosDeLlamada:
                     self._recursos = AppResources(
                         settings=self._settings,
                         retriever=self._retriever or Retriever(self._settings),
+                        historial=self._historial,
                     )
                 except Exception:
                     logger.exception("Sin RAG para las llamadas; se atenderá sin herramientas")

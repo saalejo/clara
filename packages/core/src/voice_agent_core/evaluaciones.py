@@ -69,6 +69,10 @@ class ResumenLlamada(BaseModel):
 
     id_llamada: str
     momento: str
+    #: El color del triaje de la llamada ("verde", "amarillo" o "rojo"),
+    #: copiado por el sistema de la última alerta registrada — no de la
+    #: memoria del modelo. Vacío solo si la llamada terminó sin triaje.
+    nivel: str = ""
     paciente_y_procedimiento: str
     sintomas: str
     decision: str

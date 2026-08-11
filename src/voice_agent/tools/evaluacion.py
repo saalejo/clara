@@ -120,6 +120,11 @@ async def registrar_alerta(
     # Para el resumen de respaldo si el paciente cuelga sin despedirse.
     recursos.ultima_alerta = alerta
 
+    # El historial por número, si esta llamada tiene ficha. Nunca lanza y
+    # sobre una llamada sin registrar (navegador) no hace nada.
+    if recursos.historial is not None:
+        recursos.historial.anotar_alerta(alerta.id_llamada, str(nivel_valido))
+
     logger.info(f"[herramienta] registrar_alerta({nivel_valido}) -> {ruta.name}")
     await params.result_callback(
         {
@@ -160,6 +165,10 @@ async def finalizar_llamada(
     resumen = ResumenLlamada(
         id_llamada=recursos.traza.id_llamada if recursos.traza else "sin-traza",
         momento=momento.isoformat(timespec="seconds"),
+        # El color del triaje lo pone el sistema desde la alerta registrada,
+        # no la redacción del modelo: es lo que exige que el registro de la
+        # llamada deje la gravedad clara e inequívoca.
+        nivel=str(recursos.ultima_alerta.nivel) if recursos.ultima_alerta else "",
         paciente_y_procedimiento=paciente_y_procedimiento.strip(),
         sintomas=sintomas.strip(),
         decision=decision.strip(),
@@ -184,6 +193,16 @@ async def finalizar_llamada(
         return
 
     recursos.resumen_guardado = True
+
+    if recursos.historial is not None:
+        recursos.historial.anotar_resumen(
+            resumen.id_llamada,
+            paciente_y_procedimiento=resumen.paciente_y_procedimiento,
+            decision=resumen.decision,
+            proximos_pasos=resumen.proximos_pasos,
+            nivel=resumen.nivel,
+        )
+
     logger.info(f"[herramienta] finalizar_llamada -> {ruta.name}")
     await params.result_callback({"guardado": True, "fichero": ruta.name})
 

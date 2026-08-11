@@ -20,6 +20,7 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 
 from voice_agent.tools.clock import obtener_fecha_hora
 from voice_agent.tools.evaluacion import finalizar_llamada, registrar_alerta
+from voice_agent.tools.historial import historial_paciente
 from voice_agent.tools.knowledge import buscar_en_documentos
 from voice_agent.tools.system import estado_del_sistema
 from voice_agent.tools.tareas import guardar_respuestas
@@ -35,6 +36,7 @@ HERRAMIENTAS: list[FunctionSchema | DirectFunction] = [
     obtener_fecha_hora,
     estado_del_sistema,
     guardar_respuestas,
+    historial_paciente,
 ]
 
 # Las de teléfono viven en `voice_agent.tools.telefono` y NO se añaden a la
@@ -119,6 +121,7 @@ __all__ = [
     "finalizar_llamada",
     "guardar_respuestas",
     "herramientas_activas",
+    "historial_paciente",
     "nombre_de",
     "obtener_fecha_hora",
     "registrar_alerta",

@@ -18,7 +18,7 @@ def test_la_lista_devuelta_es_una_copia() -> None:
     # Si fuera la misma lista, filtrar en un sitio mutaría el registro global.
     activas = herramientas_activas(frozenset())
     activas.clear()
-    assert len(HERRAMIENTAS) == 6
+    assert len(HERRAMIENTAS) == 7
 
 
 def test_desactivar_una_la_quita() -> None:
@@ -29,12 +29,13 @@ def test_desactivar_una_la_quita() -> None:
         "finalizar_llamada",
         "obtener_fecha_hora",
         "guardar_respuestas",
+        "historial_paciente",
     }
 
 
 def test_un_nombre_desconocido_no_molesta() -> None:
     # Puede venir de una versión anterior o de un servidor MCP que ya no está.
-    assert len(herramientas_activas({"herramienta_fantasma"})) == 6
+    assert len(herramientas_activas({"herramienta_fantasma"})) == 7
 
 
 def test_se_pueden_desactivar_todas() -> None:

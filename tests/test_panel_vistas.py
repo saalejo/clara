@@ -30,6 +30,7 @@ RUTAS_PRIVADAS = [
     "mcp",
     "hooks",
     "tareas",
+    "pacientes",
     "logs",
     "despliegues",
 ]

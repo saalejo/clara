@@ -33,6 +33,7 @@ import voice_agent_core.config
 import voice_agent_core.corpus
 import voice_agent_core.cron
 import voice_agent_core.estado
+import voice_agent_core.historial
 import voice_agent_core.prompts
 import voice_agent_core.runtime
 import voice_agent_core.rutas

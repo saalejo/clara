@@ -93,6 +93,11 @@ def dir_trazas(data_dir: Path) -> Path:
     return dir_evaluaciones(data_dir) / "trazas"
 
 
+def ruta_historial(data_dir: Path) -> Path:
+    """Base SQLite del historial de pacientes por número de teléfono."""
+    return dir_evaluaciones(data_dir) / "historial.sqlite3"
+
+
 def ruta_estado(data_dir: Path) -> Path:
     """Lo que el agente publica sobre sí mismo tras arrancar."""
     return dir_config(data_dir) / NOMBRE_ESTADO
