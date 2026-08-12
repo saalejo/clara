@@ -12,6 +12,10 @@ que un cambio de nombre no se convierta en una cacería.
     <DATA_DIR>/logs/agente.log               agente -> panel (log en vivo)
     <DATA_DIR>/tareas/resultados/<id>/       agente -> panel (respuestas de cuestionarios)
     <DATA_DIR>/tareas/bitacora.jsonl         agente -> panel (bitácora de ejecuciones)
+    <DATA_DIR>/calidad/solicitud.json        panel -> runner (qué escenarios ensayar)
+    <DATA_DIR>/calidad/lote.json             runner -> panel (progreso del lote)
+    <DATA_DIR>/calidad/resultados/<id>.json  runner -> panel (expediente por ejecución)
+    <DATA_DIR>/calidad/sandbox/<id>/         runner (data_dir aislado de cada ensayo)
 """
 
 from __future__ import annotations
@@ -25,6 +29,10 @@ from typing import Any
 SUBDIR_CONFIG = "config"
 SUBDIR_LOGS = "logs"
 SUBDIR_TAREAS = "tareas"
+SUBDIR_CALIDAD = "calidad"
+
+NOMBRE_SOLICITUD_CALIDAD = "solicitud.json"
+NOMBRE_LOTE_CALIDAD = "lote.json"
 
 NOMBRE_SNAPSHOT_SETTINGS = "settings.json"
 NOMBRE_RUNTIME = "runtime.json"
@@ -96,6 +104,36 @@ def dir_trazas(data_dir: Path) -> Path:
 def ruta_historial(data_dir: Path) -> Path:
     """Base SQLite del historial de pacientes por número de teléfono."""
     return dir_evaluaciones(data_dir) / "historial.sqlite3"
+
+
+def dir_calidad(data_dir: Path) -> Path:
+    """Carpeta de las pruebas de calidad adversarias."""
+    return data_dir / SUBDIR_CALIDAD
+
+
+def ruta_solicitud_calidad(data_dir: Path) -> Path:
+    """Petición del panel al runner: qué escenarios ensayar."""
+    return dir_calidad(data_dir) / NOMBRE_SOLICITUD_CALIDAD
+
+
+def ruta_lote_calidad(data_dir: Path) -> Path:
+    """Progreso del lote que el runner publica para el panel."""
+    return dir_calidad(data_dir) / NOMBRE_LOTE_CALIDAD
+
+
+def dir_resultados_calidad(data_dir: Path) -> Path:
+    """Expedientes de las ejecuciones, un JSON por ejecución."""
+    return dir_calidad(data_dir) / "resultados"
+
+
+def dir_sandbox_calidad(data_dir: Path) -> Path:
+    """Raíz de los `data_dir` aislados de cada ensayo.
+
+    Cada ejecución corre con su propio `data_dir` bajo aquí, para que las
+    alertas y resúmenes de prueba no se mezclen con los de pacientes reales en
+    las páginas de Evaluaciones y Pacientes del panel.
+    """
+    return dir_calidad(data_dir) / "sandbox"
 
 
 def ruta_estado(data_dir: Path) -> Path:

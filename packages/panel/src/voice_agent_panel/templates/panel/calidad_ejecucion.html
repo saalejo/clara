@@ -1,0 +1,90 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Ejecución — Calidad{% endblock %}
+{% block contenido %}
+<p class="pie">
+  <a href="{% url 'calidad' %}">← Calidad</a>
+  {% if escenario %} · <a href="{% url 'calidad_escenario' escenario.id %}">{{ escenario.nombre }}</a>{% endif %}
+</p>
+<h1>{% if escenario %}{{ escenario.nombre }}{% else %}{{ resultado.escenario_id }}{% endif %}</h1>
+<p class="pie">{{ resultado.momento }} · <code>{{ resultado.id_ejecucion }}</code></p>
+
+{% if resultado.estado == "error" %}
+<div class="aviso error">El ensayo falló: {{ resultado.error }}</div>
+{% endif %}
+
+<div class="tarjeta">
+  <p>
+    <strong>Veredicto efectivo:</strong>
+    {% if veredicto == "aprobado" %}<span class="triaje verde">aprobado</span>
+    {% elif veredicto == "fallo" %}<span class="triaje rojo">fallo</span>
+    {% elif veredicto == "error" %}<span class="triaje amarillo">error</span>
+    {% else %}<span class="triaje sin">sin veredicto</span>{% endif %}
+  </p>
+  {% if resultado.veredicto %}
+  <p class="ayuda">
+    Juez ({% if resultado.veredicto.determinista %}chequeo determinista{% else %}LLM{% endif %}):
+    {% if resultado.veredicto.aprobado %}aprobado{% else %}fallo{% endif %}
+  </p>
+  <p style="white-space:pre-wrap">{{ resultado.veredicto.razonamiento }}</p>
+  {% endif %}
+  {% if revision %}
+  <p class="aviso warning">Revisión manual: <strong>{{ revision.get_veredicto_display }}</strong>
+    {% if revision.autor %}por {{ revision.autor }}{% endif %}.
+    {% if revision.nota %}<br>{{ revision.nota }}{% endif %}</p>
+  {% endif %}
+</div>
+
+<h2>Artefactos</h2>
+<div class="tarjeta">
+  <p><strong>Alertas registradas:</strong>
+    {% for a in resultado.alertas %}<span class="triaje {{ a.nivel }}">{{ a.nivel }}</span> {% empty %}<span class="ayuda">ninguna</span>{% endfor %}
+  </p>
+  <p><strong>Documentos consultados (RAG):</strong>
+    {% if resultado.documentos_consultados %}{{ resultado.documentos_consultados|join:" · " }}{% else %}<span class="ayuda">ninguno</span>{% endif %}
+  </p>
+  {% if resultado.resumen %}
+  <p><strong>Resumen final:</strong> {{ resultado.resumen.decision }}</p>
+  {% else %}
+  <p class="ayuda">No se guardó resumen de llamada.</p>
+  {% endif %}
+  <p class="ayuda">Coste: {{ resultado.uso.llamadas }} llamadas al LLM,
+    {{ resultado.uso.tokens_entrada }}+{{ resultado.uso.tokens_salida }} tokens,
+    {{ resultado.uso.duracion_s }} s.</p>
+</div>
+
+<h2>Transcripción</h2>
+{% for t in resultado.turnos %}
+  {% if t.rol == "herramienta" %}
+  <div class="turno herramienta"><span class="quien">herramienta · {{ t.texto }}</span>{{ t.detalle.argumentos }}</div>
+  {% else %}
+  <div class="turno {{ t.rol }}"><span class="quien">{{ t.rol }}</span>{{ t.texto }}</div>
+  {% endif %}
+{% empty %}
+<p class="ayuda">Sin turnos registrados.</p>
+{% endfor %}
+
+<h2>Revisar a mano</h2>
+<div class="tarjeta">
+  <form method="post" action="{% url 'calidad_ejecucion' resultado.id_ejecucion %}">
+    {% csrf_token %}
+    <input type="hidden" name="accion" value="revisar">
+    <label for="veredicto">Veredicto</label>
+    <select name="veredicto" id="veredicto">
+      <option value="aprobado">Aprobado</option>
+      <option value="fallo">Fallo</option>
+    </select>
+    <label for="nota">Nota (por qué anulas al juez)</label>
+    <textarea name="nota" id="nota" rows="2">{% if revision %}{{ revision.nota }}{% endif %}</textarea>
+    <div class="acciones">
+      <button class="principal">Guardar revisión</button>
+    </div>
+  </form>
+  {% if revision %}
+  <form method="post" action="{% url 'calidad_ejecucion' resultado.id_ejecucion %}">
+    {% csrf_token %}
+    <input type="hidden" name="accion" value="quitar_revision">
+    <div class="acciones"><button class="peligro">Quitar revisión</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

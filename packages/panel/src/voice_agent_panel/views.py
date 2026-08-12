@@ -16,21 +16,40 @@ from typing import Any
 from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required
-from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from voice_agent_core import board, corpus
+from voice_agent_core.calidad import (
+    CATALOGO,
+    NOMBRE_CATEGORIA,
+    EstadoLote,
+    ResultadoEscenario,
+    SolicitudCalidad,
+    escenario_por_id,
+    por_categoria,
+)
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
 from voice_agent_core.estado import leer_estado
 from voice_agent_core.historial import HistorialPacientes
 from voice_agent_core.runtime import EventoHook
 from voice_agent_core.rutas import (
     dir_alertas,
+    dir_resultados_calidad,
     dir_resultados_tareas,
     dir_resumenes,
+    escribir_json_atomico,
     ruta_bitacora_tareas,
     ruta_historial,
+    ruta_lote_calidad,
+    ruta_solicitud_calidad,
 )
 from voice_agent_panel import agenda, control, tailer
 from voice_agent_panel.context_processors import CLAVE_SESION_PERFIL, perfil_en_edicion
@@ -55,8 +74,10 @@ from voice_agent_panel.models import (
     Despliegue,
     Herramienta,
     Hook,
+    LanzamientoCalidad,
     Perfil,
     Reindexado,
+    RevisionCalidad,
     ServidorMCP,
     TareaProgramada,
     VersionPrompt,
@@ -747,6 +768,246 @@ def pacientes(request: HttpRequest) -> HttpResponse:
         request,
         "panel/pacientes.html",
         {"fichas": historial.pacientes(), "llamadas": historial.llamadas(limite=50)},
+    )
+
+
+# --- Calidad -----------------------------------------------------------------
+
+
+def _resultados_calidad() -> list[ResultadoEscenario]:
+    """Lee todos los expedientes de calidad, tolerando ficheros a medias.
+
+    El runner escribe uno por ejecución en `data/calidad/resultados/`; el panel
+    solo lee, igual que con las evaluaciones y las tareas.
+    """
+    carpeta = dir_resultados_calidad(django_settings.DATA_DIR)
+    resultados: list[ResultadoEscenario] = []
+    if carpeta.is_dir():
+        for fichero in carpeta.glob("*.json"):
+            try:
+                resultados.append(
+                    ResultadoEscenario.model_validate_json(fichero.read_text(encoding="utf-8"))
+                )
+            except (OSError, ValueError):
+                continue
+    return resultados
+
+
+def _leer_ejecucion(id_ejecucion: str) -> ResultadoEscenario | None:
+    """Lee un expediente concreto por su id, o None si no existe o no valida."""
+    ruta = dir_resultados_calidad(django_settings.DATA_DIR) / f"{id_ejecucion}.json"
+    if not ruta.is_file():
+        return None
+    try:
+        return ResultadoEscenario.model_validate_json(ruta.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _veredicto_efectivo(
+    resultado: ResultadoEscenario | None, revision: RevisionCalidad | None
+) -> str:
+    """El veredicto que manda: la revisión manual pesa más que el juez.
+
+    Returns:
+        "aprobado", "fallo", "error" o "sin" (sin ejecutar todavía).
+    """
+    if revision is not None:
+        return revision.veredicto
+    if resultado is None:
+        return "sin"
+    if resultado.estado == "error":
+        return "error"
+    if resultado.veredicto is not None:
+        return "aprobado" if resultado.veredicto.aprobado else "fallo"
+    return "sin"
+
+
+def _lote_en_curso() -> tuple[bool, EstadoLote | None]:
+    """Si hay un lote corriendo y su progreso, para el aviso de la matriz."""
+    try:
+        en_marcha = control.estado_calidad().activo
+    except control.ErrorDeControl:
+        en_marcha = False
+    lote = None
+    ruta = ruta_lote_calidad(django_settings.DATA_DIR)
+    if ruta.is_file():
+        try:
+            lote = EstadoLote.model_validate_json(ruta.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            lote = None
+    return en_marcha, lote
+
+
+def calidad(request: HttpRequest) -> HttpResponse:
+    """La matriz de escenarios adversarios, agrupada por categoría.
+
+    Cada escenario muestra el veredicto de su última ejecución (con la revisión
+    manual superpuesta si la hay) y un botón para volver a ensayarlo. Los
+    resultados son ficheros del runner; la matriz es el catálogo del código.
+    """
+    ultimos: dict[str, ResultadoEscenario] = {}
+    for resultado in _resultados_calidad():
+        actual = ultimos.get(resultado.escenario_id)
+        if actual is None or resultado.momento > actual.momento:
+            ultimos[resultado.escenario_id] = resultado
+
+    revisiones = {
+        r.id_ejecucion: r
+        for r in RevisionCalidad.objects.filter(
+            id_ejecucion__in=[r.id_ejecucion for r in ultimos.values()]
+        )
+    }
+
+    grupos = []
+    for categoria, escenarios in por_categoria().items():
+        tarjetas = []
+        for escenario in escenarios:
+            ultimo = ultimos.get(escenario.id)
+            revision = revisiones.get(ultimo.id_ejecucion) if ultimo else None
+            tarjetas.append(
+                {
+                    "escenario": escenario,
+                    "resultado": ultimo,
+                    "revision": revision,
+                    "veredicto": _veredicto_efectivo(ultimo, revision),
+                }
+            )
+        grupos.append({"nombre": NOMBRE_CATEGORIA[categoria], "tarjetas": tarjetas})
+
+    en_marcha, lote = _lote_en_curso()
+    return render(
+        request,
+        "panel/calidad.html",
+        {"grupos": grupos, "en_marcha": en_marcha, "lote": lote},
+    )
+
+
+@require_POST
+def calidad_lanzar(request: HttpRequest) -> HttpResponse:
+    """Encola un lote de escenarios y arranca el runner por systemd.
+
+    Como el reindexado, escribe la solicitud en disco **antes** de arrancar la
+    unidad y deja una fila de bitácora; el panel encola, no afirma que terminó.
+    """
+    if request.POST.get("todos") == "1":
+        ids = [e.id for e in CATALOGO]
+    else:
+        escenario_id = request.POST.get("escenario", "")
+        if escenario_por_id(escenario_id) is None:
+            raise Http404("Escenario desconocido.")
+        ids = [escenario_id]
+
+    en_marcha, _ = _lote_en_curso()
+    if en_marcha:
+        messages.warning(request, "Ya hay un lote de calidad en marcha; espera a que termine.")
+        return redirect("calidad")
+
+    autor = request.user if request.user.is_authenticated else None
+    id_lote = f"panel-{datetime.now():%Y%m%d-%H%M%S}"
+    solicitud = SolicitudCalidad(
+        id_lote=id_lote,
+        momento=datetime.now().isoformat(timespec="seconds"),
+        escenarios=ids,
+        autor=getattr(autor, "username", ""),
+    )
+    try:
+        escribir_json_atomico(
+            ruta_solicitud_calidad(django_settings.DATA_DIR), solicitud.model_dump(mode="json")
+        )
+    except OSError as e:
+        messages.error(request, f"No se pudo dejar la solicitud en disco: {e}")
+        return redirect("calidad")
+
+    try:
+        control.lanzar_calidad()
+    except control.ErrorDeControl as e:
+        LanzamientoCalidad.objects.create(
+            autor=autor,
+            resultado=LanzamientoCalidad.Resultado.ERROR,
+            detalle=str(e),
+            escenarios=ids,
+        )
+        messages.error(request, str(e))
+        return redirect("calidad")
+
+    LanzamientoCalidad.objects.create(
+        autor=autor, resultado=LanzamientoCalidad.Resultado.LANZADO, escenarios=ids
+    )
+    messages.success(
+        request,
+        f"Lanzados {len(ids)} escenario(s). Recarga la página para ver el progreso y los veredictos.",
+    )
+    return redirect("calidad")
+
+
+def calidad_escenario(request: HttpRequest, escenario_id: str) -> HttpResponse:
+    """El historial de ejecuciones de un escenario concreto."""
+    escenario = escenario_por_id(escenario_id)
+    if escenario is None:
+        raise Http404("Escenario desconocido.")
+
+    ejecuciones = sorted(
+        (r for r in _resultados_calidad() if r.escenario_id == escenario_id),
+        key=lambda r: r.momento,
+        reverse=True,
+    )
+    revisiones = {
+        r.id_ejecucion: r
+        for r in RevisionCalidad.objects.filter(
+            id_ejecucion__in=[e.id_ejecucion for e in ejecuciones]
+        )
+    }
+    filas = [
+        {
+            "resultado": e,
+            "revision": revisiones.get(e.id_ejecucion),
+            "veredicto": _veredicto_efectivo(e, revisiones.get(e.id_ejecucion)),
+        }
+        for e in ejecuciones
+    ]
+    return render(request, "panel/calidad_escenario.html", {"escenario": escenario, "filas": filas})
+
+
+def calidad_ejecucion(request: HttpRequest, id_ejecucion: str) -> HttpResponse:
+    """El detalle de una ejecución: transcripción, veredicto y revisión manual."""
+    resultado = _leer_ejecucion(id_ejecucion)
+    if resultado is None:
+        raise Http404("Ejecución desconocida.")
+
+    if request.method == "POST":
+        accion = request.POST.get("accion", "")
+        if accion == "quitar_revision":
+            RevisionCalidad.objects.filter(id_ejecucion=id_ejecucion).delete()
+            messages.success(request, "Revisión retirada; vuelve a mandar el veredicto del juez.")
+        elif accion == "revisar":
+            veredicto = request.POST.get("veredicto", "")
+            if veredicto not in dict(RevisionCalidad.Veredicto.choices):
+                messages.error(request, "Veredicto no válido.")
+            else:
+                autor = request.user if request.user.is_authenticated else None
+                RevisionCalidad.objects.update_or_create(
+                    id_ejecucion=id_ejecucion,
+                    defaults={
+                        "veredicto": veredicto,
+                        "nota": request.POST.get("nota", "").strip(),
+                        "autor": autor,
+                    },
+                )
+                messages.success(request, "Revisión guardada.")
+        return redirect("calidad_ejecucion", id_ejecucion=id_ejecucion)
+
+    escenario = escenario_por_id(resultado.escenario_id)
+    revision = RevisionCalidad.objects.filter(id_ejecucion=id_ejecucion).first()
+    return render(
+        request,
+        "panel/calidad_ejecucion.html",
+        {
+            "resultado": resultado,
+            "escenario": escenario,
+            "revision": revision,
+            "veredicto": _veredicto_efectivo(resultado, revision),
+        },
     )
 
 

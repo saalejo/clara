@@ -1,0 +1,45 @@
+{% extends "panel/base.html" %}
+{% block titulo %}{{ escenario.nombre }} — Calidad{% endblock %}
+{% block contenido %}
+<p class="pie"><a href="{% url 'calidad' %}">← Calidad</a></p>
+<h1>{{ escenario.nombre }}</h1>
+<p class="pie">{{ escenario.descripcion }}</p>
+
+<div class="tarjeta">
+  <p><strong>Criterios de éxito</strong></p>
+  <p style="white-space:pre-wrap">{{ escenario.criterios }}</p>
+  {% if escenario.espera_alerta %}
+  <p class="ayuda">Chequeo determinista: exige una alerta
+    <span class="triaje {{ escenario.espera_alerta }}">{{ escenario.espera_alerta }}</span>.</p>
+  {% endif %}
+</div>
+
+<div class="acciones">
+  <form method="post" action="{% url 'calidad_lanzar' %}">
+    {% csrf_token %}
+    <input type="hidden" name="escenario" value="{{ escenario.id }}">
+    <button class="principal">Ejecutar de nuevo</button>
+  </form>
+</div>
+
+<h2>Ejecuciones</h2>
+<table>
+  <tr><th>Cuándo</th><th>Veredicto</th><th>Fuente</th><th>Tokens</th><th></th></tr>
+  {% for f in filas %}
+  <tr>
+    <td>{{ f.resultado.momento }}</td>
+    <td>
+      {% if f.veredicto == "aprobado" %}<span class="triaje verde">aprobado</span>
+      {% elif f.veredicto == "fallo" %}<span class="triaje rojo">fallo</span>
+      {% elif f.veredicto == "error" %}<span class="triaje amarillo">error</span>
+      {% else %}<span class="triaje sin">sin</span>{% endif %}
+    </td>
+    <td>{% if f.revision %}revisión manual{% elif f.resultado.veredicto.determinista %}chequeo determinista{% else %}juez{% endif %}</td>
+    <td class="ayuda">{{ f.resultado.uso.tokens_entrada|add:f.resultado.uso.tokens_salida }}</td>
+    <td><a href="{% url 'calidad_ejecucion' f.resultado.id_ejecucion %}">Ver</a></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="ayuda">Sin ejecuciones todavía.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Calidad{% endblock %}
+{% block contenido %}
+<h1>Calidad</h1>
+<p class="pie">Ensayos adversarios contra Clara, por texto y sin voz: un LLM
+  interpreta el rol (enfadado, inyección de prompt, bandera roja…) y conversa
+  contra el mismo prompt, RAG y herramientas que atienden los jueces; otro LLM
+  juzga el resultado. Mide el <em>cerebro</em>, no el oído: no cubre el ruido del
+  micrófono ni las interrupciones. Cada ejecución guarda su transcripción.</p>
+
+{% if en_marcha %}
+<div class="aviso warning">
+  Hay un lote en marcha{% if lote %} — {{ lote.completados }}/{{ lote.total }}
+  {% if lote.en_curso %}(ensayando «{{ lote.en_curso }}»){% endif %}{% endif %}.
+  Recarga la página para ver el avance.
+</div>
+{% endif %}
+
+<div class="acciones">
+  <form method="post" action="{% url 'calidad_lanzar' %}">
+    {% csrf_token %}
+    <input type="hidden" name="todos" value="1">
+    <button class="principal" {% if en_marcha %}disabled{% endif %}>Ejecutar todos</button>
+  </form>
+</div>
+
+{% for grupo in grupos %}
+<h2>{{ grupo.nombre }}</h2>
+<div class="rejilla">
+  {% for t in grupo.tarjetas %}
+  <div class="tarjeta">
+    <p>
+      {% if t.veredicto == "aprobado" %}<span class="triaje verde">aprobado</span>
+      {% elif t.veredicto == "fallo" %}<span class="triaje rojo">fallo</span>
+      {% elif t.veredicto == "error" %}<span class="triaje amarillo">error</span>
+      {% else %}<span class="triaje sin">sin ejecutar</span>{% endif %}
+      {% if t.revision %}<span class="ayuda">(revisado a mano)</span>{% endif %}
+    </p>
+    <p><strong>{{ t.escenario.nombre }}</strong></p>
+    <p class="ayuda">{{ t.escenario.descripcion }}</p>
+    {% if t.resultado %}
+    <p class="ayuda">Último: {{ t.resultado.momento }}</p>
+    {% endif %}
+    <div class="acciones">
+      <form method="post" action="{% url 'calidad_lanzar' %}">
+        {% csrf_token %}
+        <input type="hidden" name="escenario" value="{{ t.escenario.id }}">
+        <button {% if en_marcha %}disabled{% endif %}>Ejecutar</button>
+      </form>
+      <a class="boton" href="{% url 'calidad_escenario' t.escenario.id %}">Historial</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% endblock %}

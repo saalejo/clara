@@ -77,6 +77,10 @@ reingest:  ## Reconstruye el índice desde cero
 ask:  ## Consulta el RAG por CLI sin voz.  Uso: make ask Q="tu pregunta"
 	uv run python -m voice_agent.rag.retriever "$(Q)"
 
+.PHONY: calidad
+calidad:  ## Ensaya escenarios de calidad adversarios.  Uso: make calidad [ESC="id1 id2"]
+	uv run python -m voice_agent.calidad $(if $(ESC),$(foreach e,$(ESC),--escenario $(e)),--todos)
+
 # --- Audio --------------------------------------------------------------------
 
 # Las pruebas de audio necesitan la tarjeta para ellas solas. La capa dmix/dsnoop

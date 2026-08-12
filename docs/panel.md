@@ -237,6 +237,43 @@ activa marcándolo en la lista, que guarda la selección del perfil en edición.
 > una regla que cruce el límite de un fragmento no casará nunca. Bufferizar la
 > respuesta entera costaría toda la latencia de generación.
 
+### Calidad
+
+La sección Calidad ensaya a Clara contra ataques adversarios —inyección de
+prompt, paciente hostil, banderas rojas, preguntas fuera del corpus— **por texto
+y sin voz**. Es la respuesta a que la evaluación del reto es una sesión en vivo
+donde los jueces atacan al agente: aquí esos mismos ataques se pueden ensayar a
+solas antes de la demo y medir cómo responde.
+
+Cómo funciona: un LLM interpreta el rol del escenario (su `persona`) y conversa
+contra el **mismo** prompt de sistema, RAG y herramientas que atienden los
+jueces; otro LLM juzga el resultado contra los criterios del escenario. Para los
+escenarios de bandera roja hay además un **chequeo determinista**: si Clara no
+registró la alerta del nivel exigido, es fallo automático —el falso negativo
+clínico no se deja al criterio de otro modelo—. El veredicto del juez se puede
+anular a mano desde el detalle de cada ejecución.
+
+El catálogo de escenarios vive en el código (`voice_agent_core/calidad.py`,
+cuatro categorías: seguridad, paciente difícil, riesgo clínico, robustez); la
+matriz de la página lo pinta agrupado y guarda el historial de ejecuciones por
+escenario, con la transcripción completa de cada una.
+
+Como el reindexado, el panel **no ejecuta nada**: deja la solicitud en
+`<DATA_DIR>/calidad/solicitud.json` y arranca por D-Bus la unidad oneshot
+`clara-calidad.service`, que corre en la imagen del agente porque necesita
+el LLM y el RAG. Los resultados son ficheros que el runner deja en
+`<DATA_DIR>/calidad/resultados/`; el panel solo los lee. Cada ensayo corre en un
+`data_dir` aislado (`calidad/sandbox/`) para que sus alertas y resúmenes de
+prueba **no** aparezcan en las páginas de Evaluaciones ni Pacientes.
+
+Mide el **cerebro, no el oído**: no cubre el ruido del micrófono, las muletillas
+ni las interrupciones; prueba el prompt, el RAG y las herramientas, que es lo que
+el jurado ataca con palabras. Desde SSH, `make calidad` (todo el catálogo) o
+`make calidad ESC="inyeccion-olvida bandera-roja"` ejecuta sin pasar por el
+panel. Ojo con la cuota del nivel gratuito de Gemini: el lote completo son ~14
+conversaciones y comparte cuota con el agente en vivo, así que no conviene
+lanzarlo minutos antes de la demo.
+
 ### Logs y despliegues
 
 Los logs se leen de `<DATA_DIR>/logs/agente.log`, que el agente escribe en el

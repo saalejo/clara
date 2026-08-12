@@ -13,11 +13,23 @@ from voice_agent_panel.models import (
     Despliegue,
     Herramienta,
     Hook,
+    LanzamientoCalidad,
     Perfil,
+    RevisionCalidad,
     ServidorMCP,
     VersionPrompt,
 )
 
 admin.site.register(
-    [AjusteAgente, Despliegue, Herramienta, Hook, Perfil, ServidorMCP, VersionPrompt]
+    [
+        AjusteAgente,
+        Despliegue,
+        Herramienta,
+        Hook,
+        LanzamientoCalidad,
+        Perfil,
+        RevisionCalidad,
+        ServidorMCP,
+        VersionPrompt,
+    ]
 )

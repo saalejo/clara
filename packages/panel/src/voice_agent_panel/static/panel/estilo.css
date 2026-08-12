@@ -111,3 +111,13 @@ pre { background: #12141a; border: 1px solid var(--borde); border-radius: 6px;
   padding: .8rem; height: 32rem; overflow-y: auto; white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
 }
+
+/* La transcripción de un ensayo de calidad: burbujas por interlocutor. */
+.turno { border-radius: 8px; padding: .5rem .8rem; margin: .5rem 0; max-width: 85%;
+         white-space: pre-wrap; border: 1px solid var(--borde); }
+.turno .quien { font-size: 12px; font-weight: 700; color: var(--suave);
+                text-transform: uppercase; letter-spacing: .04em; display: block; }
+.turno.clara     { background: #1a2230; margin-right: auto; }
+.turno.paciente  { background: #241d24; margin-left: auto; }
+.turno.herramienta { background: #12141a; color: var(--suave); max-width: 100%;
+                     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }

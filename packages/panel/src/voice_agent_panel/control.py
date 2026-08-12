@@ -26,6 +26,8 @@ __all__ = [
     "EstadoUnidad",
     "arrancar",
     "estado",
+    "estado_calidad",
+    "lanzar_calidad",
     "lanzar_ingesta",
     "parar",
     "reiniciar",
@@ -74,3 +76,19 @@ def lanzar_ingesta() -> str:
     ocurra dentro del panel ni compitiendo por los 2 GB del agente.
     """
     return _control().arrancar(settings.UNIDAD_INGESTA)
+
+
+def lanzar_calidad() -> str:
+    """Lanza el runner de pruebas de calidad como unidad oneshot.
+
+    El panel deja antes la solicitud en `data/calidad/solicitud.json`; esta
+    unidad la lee y ejecuta el lote. Como la ingesta, corre en la imagen del
+    agente porque necesita el LLM, el RAG y las herramientas, que el panel no
+    tiene.
+    """
+    return _control().arrancar(settings.UNIDAD_CALIDAD)
+
+
+def estado_calidad() -> EstadoUnidad:
+    """Estado del runner de calidad, para saber si un lote sigue en marcha."""
+    return _control().estado(settings.UNIDAD_CALIDAD)

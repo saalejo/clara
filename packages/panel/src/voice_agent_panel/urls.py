@@ -57,6 +57,16 @@ urlpatterns = [
     path("panel/tareas/<int:pk>/resultados/", views.tarea_resultados, name="tarea_resultados"),
     path("panel/evaluaciones/", views.evaluaciones, name="evaluaciones"),
     path("panel/pacientes/", views.pacientes, name="pacientes"),
+    path("panel/calidad/", views.calidad, name="calidad"),
+    path("panel/calidad/lanzar/", views.calidad_lanzar, name="calidad_lanzar"),
+    # `ejecucion/` va ANTES del slug del escenario para que no lo capture; los
+    # dos ids son slugs (sin puntos ni barras), así que no hay traversal posible.
+    path(
+        "panel/calidad/ejecucion/<slug:id_ejecucion>/",
+        views.calidad_ejecucion,
+        name="calidad_ejecucion",
+    ),
+    path("panel/calidad/<slug:escenario_id>/", views.calidad_escenario, name="calidad_escenario"),
     path("panel/hooks/", views.hooks, name="hooks"),
     path("panel/hooks/nuevo/", views.hook_editar, name="hook_nuevo"),
     path("panel/hooks/<int:pk>/", views.hook_editar, name="hook_editar"),

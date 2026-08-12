@@ -29,6 +29,7 @@ PROGRAMA = """
 import sys
 
 import voice_agent_core.board
+import voice_agent_core.calidad
 import voice_agent_core.config
 import voice_agent_core.corpus
 import voice_agent_core.cron

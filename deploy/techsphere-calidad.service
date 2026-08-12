@@ -1,0 +1,26 @@
+# Las pruebas de calidad adversarias, lanzadas por el botón "Ejecutar" de la
+# sección Calidad del panel.
+#
+# Igual que el reindexado, el panel no ejecuta comandos: deja la solicitud en
+# data/calidad/solicitud.json y arranca esta unidad oneshot por D-Bus (ver
+# packages/panel/src/voice_agent_panel/control.py). El runner conversa por texto
+# contra Clara —prompt, RAG y herramientas reales— y deja los resultados en
+# data/calidad/resultados/, donde el panel los lee.
+#
+# TimeoutStartSec alto porque un lote completo son ~14 conversaciones seguidas
+# contra el LLM; cada ensayo tiene además su propio tope interno de 180 s.
+#
+# Instalación:
+#   cp deploy/clara-calidad.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+[Unit]
+Description=Agente de seguimiento postoperatorio - pruebas de calidad adversarias
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/clara
+ExecStart=%h/.local/bin/uv run python -m voice_agent.calidad
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=default.target

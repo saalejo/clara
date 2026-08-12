@@ -16,6 +16,7 @@ WorkingDirectory=%h/clara
 EnvironmentFile=%h/clara/.env.panel
 Environment=PANEL_UNIDAD_AGENTE=clara-web.service
 Environment=PANEL_UNIDAD_INGESTA=clara-ingest.service
+Environment=PANEL_UNIDAD_CALIDAD=clara-calidad.service
 ExecStart=%h/.local/bin/uv run python -m voice_agent_panel servir
 Restart=on-failure
 RestartSec=5

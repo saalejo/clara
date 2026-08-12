@@ -31,6 +31,7 @@ RUTAS_PRIVADAS = [
     "hooks",
     "tareas",
     "pacientes",
+    "calidad",
     "logs",
     "despliegues",
 ]
@@ -41,6 +42,7 @@ RUTAS_PRIVADAS_POST = [
     "tema_crear",
     "tema_borrar",
     "documento_borrar",
+    "calidad_lanzar",
 ]
 
 
@@ -68,7 +70,8 @@ def _sin_dbus(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(control, "estado", _estado)
-    for accion in ("arrancar", "parar", "reiniciar", "lanzar_ingesta"):
+    monkeypatch.setattr(control, "estado_calidad", _estado)
+    for accion in ("arrancar", "parar", "reiniciar", "lanzar_ingesta", "lanzar_calidad"):
         monkeypatch.setattr(control, accion, lambda *a, **k: "/job/1")
 
 

@@ -390,6 +390,65 @@ class Reindexado(models.Model):
         return f"{self.creado_en:%Y-%m-%d %H:%M} {self.resultado}"
 
 
+class LanzamientoCalidad(models.Model):
+    """Bitácora de cada lote de pruebas de calidad lanzado desde el panel.
+
+    Es el gemelo de `Reindexado` para la sección Calidad: "Lanzado" y no
+    "hecho", porque el panel encola el trabajo en systemd y no es quien afirma
+    que terminó. Los resultados de cada ensayo son ficheros que el runner deja en
+    `data/calidad/resultados/`, no filas de aquí.
+    """
+
+    class Resultado(models.TextChoices):
+        LANZADO = "lanzado", "Lanzado"
+        ERROR = "error", "No se pudo lanzar"
+
+    creado_en = models.DateTimeField(auto_now_add=True)
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    resultado = models.CharField(max_length=20, choices=Resultado.choices)
+    detalle = models.TextField(blank=True)
+    # Los ids de escenario que componían el lote, para poder mirar atrás qué se
+    # pidió ejecutar aunque el catálogo cambie después.
+    escenarios = models.JSONField(default=list)
+
+    class Meta:
+        ordering = ["-creado_en"]
+
+    def __str__(self) -> str:
+        return f"{self.creado_en:%Y-%m-%d %H:%M} {self.resultado}"
+
+
+class RevisionCalidad(models.Model):
+    """La opinión manual del panel sobre una ejecución de calidad.
+
+    El veredicto del juez vive en el fichero de la ejecución (verdad del runner)
+    y no se toca. Cuando el juez se equivoca, el panel puede superponer aquí un
+    veredicto propio, atado a la ejecución por su id. Es una superposición: si se
+    borra, vuelve a mandar el juez.
+    """
+
+    class Veredicto(models.TextChoices):
+        APROBADO = "aprobado", "Aprobado"
+        FALLO = "fallo", "Fallo"
+
+    id_ejecucion = models.CharField(max_length=120, unique=True)
+    veredicto = models.CharField(max_length=20, choices=Veredicto.choices)
+    nota = models.TextField(blank=True)
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-actualizado_en"]
+
+    def __str__(self) -> str:
+        return f"{self.id_ejecucion}: {self.veredicto}"
+
+
 class Despliegue(models.Model):
     """Bitácora de cada `guardar -> exportar -> reiniciar`.
 

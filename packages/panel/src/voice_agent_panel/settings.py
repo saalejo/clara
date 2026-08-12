@@ -65,7 +65,12 @@ UNIDAD_TELEFONIA = os.environ.get("PANEL_UNIDAD_TELEFONIA", "voice-agent-telefon
 # navegador si se vuelve loco: es el único proceso del sistema que acapara el
 # device de los botones, así que sin esta salida habría que entrar por SSH.
 UNIDAD_BOTONES = os.environ.get("PANEL_UNIDAD_BOTONES", "voice-agent-botones.service")
-UNIDADES_PERMITIDAS = frozenset({UNIDAD_AGENTE, UNIDAD_INGESTA, UNIDAD_TELEFONIA, UNIDAD_BOTONES})
+# El runner de las pruebas de calidad adversarias. Oneshot nativo, como la
+# ingesta: el panel deja la solicitud en disco y lo arranca por D-Bus.
+UNIDAD_CALIDAD = os.environ.get("PANEL_UNIDAD_CALIDAD", "voice-agent-calidad.service")
+UNIDADES_PERMITIDAS = frozenset(
+    {UNIDAD_AGENTE, UNIDAD_INGESTA, UNIDAD_TELEFONIA, UNIDAD_BOTONES, UNIDAD_CALIDAD}
+)
 
 INSTALLED_APPS = [
     "django.contrib.auth",
