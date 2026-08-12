@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
@@ -473,6 +474,27 @@ class Settings(BaseSettings):
             "sobran para pensar una respuesta. 0 lo desactiva."
         ),
     )
+    web_whatsapp: str = Field(
+        default="",
+        description=(
+            "Número de WhatsApp al que se ofrece escribir a quien llega sin "
+            "código, en formato internacional (por ejemplo 573001234567). Se "
+            "aceptan el '+', los espacios y los guiones: se limpian solos. "
+            "Vacío —lo normal— no enseña ningún botón; sin él, quien llegue "
+            "sin código se queda en una pantalla sin salida."
+        ),
+    )
+    web_whatsapp_mensaje: str = Field(
+        default=(
+            "Hola, estoy en la página de Clara y me gustaría probar la "
+            "demostración. ¿Me compartes el código de acceso?"
+        ),
+        description=(
+            "Texto que aparece ya escrito en WhatsApp al pulsar el botón. Se "
+            "deja redactado para que quien escribe no tenga que explicarse y "
+            "para reconocer de un vistazo de dónde sale el mensaje."
+        ),
+    )
     web_espera_sesion_secs: float = Field(
         default=8.0,
         ge=0,
@@ -752,6 +774,24 @@ class Settings(BaseSettings):
                 "Usa tiny, base, small o medium."
             )
         return v
+
+    @field_validator("web_whatsapp")
+    @classmethod
+    def _solo_digitos_en_el_whatsapp(cls, v: str) -> str:
+        """Deja el número como lo quiere `wa.me`: solo dígitos.
+
+        Se limpia en vez de rechazar porque lo natural es copiar el número tal
+        y como se lee («+57 304 641 1802»), y un `wa.me` con espacios abre una
+        pantalla de error de WhatsApp que no dice qué está mal.
+        """
+        limpio = re.sub(r"[^0-9]", "", v)
+        if limpio and len(limpio) < 8:
+            raise ValueError(
+                f"'{v}' no parece un número de WhatsApp internacional: quedan "
+                f"{len(limpio)} dígitos. Se espera algo como 573001234567 "
+                "(indicativo de país incluido, sin el 00 ni el +)."
+            )
+        return limpio
 
     @field_validator("audio_sample_rate")
     @classmethod

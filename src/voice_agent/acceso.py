@@ -38,7 +38,7 @@ import hmac
 import html
 import time
 from collections.abc import Callable
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -112,11 +112,36 @@ def codigo_correcto(codigo: str, recibido: str) -> bool:
     return hmac.compare_digest(codigo, recibido)
 
 
-def pagina_de_puerta(error: str | None = None, minutos_bloqueo: int = 0) -> str:
+def enlace_de_whatsapp(numero: str, mensaje: str) -> str:
+    """El `wa.me` para pedir el código, o cadena vacía si no hay número.
+
+    `wa.me` quiere el número en dígitos y sin `+`; de eso ya se encarga el
+    validador de `Settings`, así que aquí solo se limpia lo que llegue por
+    otras vías (un test, una llamada directa).
+    """
+    digitos = "".join(c for c in numero if c.isdigit())
+    if not digitos:
+        return ""
+    return f"https://wa.me/{digitos}?text={quote(mensaje)}"
+
+
+def pagina_de_puerta(
+    error: str | None = None,
+    minutos_bloqueo: int = 0,
+    whatsapp: str = "",
+) -> str:
     """La portada que ve quien llega sin código.
 
     Autocontenida a propósito: sin JS, sin fuentes y sin imágenes. Es lo
     primero que carga alguien que quizá esté en una red mala y con prisa.
+
+    Args:
+        error: Qué salió mal en el intento anterior, si lo hubo.
+        minutos_bloqueo: Si es mayor que cero, se enseña el castigo y se
+            esconde el formulario.
+        whatsapp: Enlace `wa.me` ya montado, para quien todavía no tiene
+            código. Vacío no enseña nada: es el valor por defecto y no hay que
+            publicar el teléfono de nadie para que la puerta funcione.
     """
     aviso = ""
     if minutos_bloqueo > 0:
@@ -128,7 +153,12 @@ def pagina_de_puerta(error: str | None = None, minutos_bloqueo: int = 0) -> str:
     elif error:
         aviso = f'<p class="error">{html.escape(error)}</p>'
     campo = "" if minutos_bloqueo > 0 else _FORMULARIO
-    return _PLANTILLA.format(aviso=aviso, formulario=campo)
+    # El botón se enseña también con la puerta bloqueada, y a propósito: quien
+    # ha fallado cinco veces es, casi siempre, alguien que no tiene el código,
+    # que es justo a quien va dirigido. A quien lo esté probando a la fuerza,
+    # un enlace de WhatsApp no le sirve de nada.
+    pedir = _PEDIR_CODIGO.format(enlace=html.escape(whatsapp, quote=True)) if whatsapp else ""
+    return _PLANTILLA.format(aviso=aviso, formulario=campo, pedir=pedir)
 
 
 _FORMULARIO = """    <form method="get" action="/">
@@ -137,6 +167,14 @@ _FORMULARIO = """    <form method="get" action="/">
              spellcheck="false" maxlength="128">
       <button type="submit">Entrar</button>
     </form>"""
+
+#: `noopener`/`noreferrer` para no pasarle a WhatsApp de dónde viene la visita
+#: —y de paso el código, si estuviera en la URL—, y `rel="nofollow"` porque
+#: esta página no debería aparecer en ningún índice.
+_PEDIR_CODIGO = """    <p class="pedir">¿Todavía no tienes código?
+      <a href="{enlace}" target="_blank" rel="noopener noreferrer nofollow">
+        Pídelo por WhatsApp</a>.
+    </p>"""
 
 _PLANTILLA = """<!doctype html>
 <html lang="es">
@@ -162,6 +200,8 @@ _PLANTILLA = """<!doctype html>
   input {{ background: Canvas; color: CanvasText; }}
   button {{ border: 0; background: #1f6feb; color: #fff; font-weight: 600;
            cursor: pointer; }}
+  .pedir {{ margin: 1.1rem 0 0; font-size: .92rem; }}
+  .pedir a {{ color: #1f8a4c; font-weight: 600; }}
   footer {{ margin-top: 1.75rem; font-size: .82rem; opacity: .6; }}
 </style>
 </head>
@@ -173,6 +213,7 @@ _PLANTILLA = """<!doctype html>
   del enlace que recibiste.</p>
   {aviso}
 {formulario}
+{pedir}
   <footer>Seguimiento postoperatorio · voz-digital.com</footer>
 </main>
 </body>
@@ -206,6 +247,7 @@ class PuertaDeAcceso:
         limitador: LimitadorDeIntentos,
         publicas: frozenset[str] = RUTAS_PUBLICAS,
         al_evento: Callable[[str, str], None] | None = None,
+        whatsapp: str = "",
     ) -> None:
         """Envuelve una aplicación ASGI.
 
@@ -219,6 +261,9 @@ class PuertaDeAcceso:
             al_evento: Gancho opcional `(tipo, ip)` para las métricas. Se
                 inyecta en vez de importar `voice_agent.metrica` porque ese
                 módulo arrastra pipecat y dejaría este a su merced.
+            whatsapp: Enlace `wa.me` ya montado para pedir el código, o vacío
+                para no ofrecerlo. Se arma una vez al construir la puerta y no
+                en cada respuesta: es una cadena fija.
         """
         self.app = app
         self._codigo = codigo
@@ -226,6 +271,7 @@ class PuertaDeAcceso:
         self._limitador = limitador
         self._publicas = publicas
         self._al_evento = al_evento
+        self._whatsapp = whatsapp
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Deja pasar, canjea el código o cierra el paso."""
@@ -320,7 +366,7 @@ class PuertaDeAcceso:
 
     def _respuesta_portada(self, error: str | None, estado: int) -> Response:
         return HTMLResponse(
-            pagina_de_puerta(error),
+            pagina_de_puerta(error, whatsapp=self._whatsapp),
             status_code=estado,
             headers={"Cache-Control": "no-store"},
         )
@@ -328,7 +374,7 @@ class PuertaDeAcceso:
     def _respuesta_bloqueado(self, restantes: int) -> Response:
         minutos = max(1, -(-restantes // 60))
         return HTMLResponse(
-            pagina_de_puerta(None, minutos_bloqueo=minutos),
+            pagina_de_puerta(None, minutos_bloqueo=minutos, whatsapp=self._whatsapp),
             status_code=429,
             headers={"Retry-After": str(restantes), "Cache-Control": "no-store"},
         )
@@ -346,6 +392,7 @@ __all__ = [
     "VERSION",
     "PuertaDeAcceso",
     "codigo_correcto",
+    "enlace_de_whatsapp",
     "firmar",
     "galleta_valida",
     "pagina_de_puerta",

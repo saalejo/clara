@@ -23,8 +23,10 @@ from voice_agent.acceso import (
     NOMBRE_GALLETA,
     PuertaDeAcceso,
     codigo_correcto,
+    enlace_de_whatsapp,
     firmar,
     galleta_valida,
+    pagina_de_puerta,
 )
 from voice_agent.web import crear_app
 from voice_agent_core.config import Settings
@@ -273,3 +275,60 @@ async def test_sin_codigo_configurado_la_puerta_no_se_monta(tmp_path: Path) -> N
         respuesta = await http.get("/", headers={"accept": "text/html"})
         assert respuesta.status_code == 200
         assert "Código de acceso" not in respuesta.text
+
+
+# --- Pedir el código por WhatsApp ---------------------------------------------
+
+
+def test_sin_numero_no_hay_enlace() -> None:
+    assert enlace_de_whatsapp("", "hola") == ""
+    assert enlace_de_whatsapp("   ", "hola") == ""
+
+
+def test_el_enlace_lleva_el_numero_limpio_y_el_mensaje() -> None:
+    enlace = enlace_de_whatsapp("+57 304 641 1802", "¿Me pasas el código?")
+    assert enlace.startswith("https://wa.me/573046411802?text=")
+    # El mensaje va escapado: un espacio suelto rompería la URL.
+    assert " " not in enlace
+    assert "c%C3%B3digo" in enlace
+
+
+def test_sin_numero_la_portada_no_ofrece_nada() -> None:
+    assert "WhatsApp" not in pagina_de_puerta()
+
+
+def test_con_numero_la_portada_lo_ofrece() -> None:
+    pagina = pagina_de_puerta(whatsapp=enlace_de_whatsapp("573046411802", "hola"))
+    assert "Pídelo por WhatsApp" in pagina
+    assert "https://wa.me/573046411802" in pagina
+    # Sin `noopener`, la pestaña de WhatsApp podría manipular la de la puerta;
+    # sin `noreferrer` se le pasaría de dónde viene la visita.
+    assert 'rel="noopener noreferrer nofollow"' in pagina
+
+
+def test_tambien_se_ofrece_con_la_puerta_bloqueada() -> None:
+    # Quien ha fallado cinco veces suele ser justo quien no tiene el código.
+    pagina = pagina_de_puerta(
+        None, minutos_bloqueo=5, whatsapp=enlace_de_whatsapp("573046411802", "hola")
+    )
+    assert "Demasiados intentos" in pagina
+    assert "Pídelo por WhatsApp" in pagina
+    assert "<form" not in pagina
+
+
+async def test_el_boton_llega_a_quien_se_queda_fuera(eventos: list[tuple[str, str]]) -> None:
+    puerta = PuertaDeAcceso(
+        AppDeJuguete(),
+        codigo=CODIGO,
+        duracion_secs=3600,
+        limitador=LimitadorDeIntentos(max_intentos=3),
+        al_evento=lambda tipo, ip: eventos.append((tipo, ip)),
+        whatsapp=enlace_de_whatsapp("573046411802", "Hola"),
+    )
+    transporte = httpx.ASGITransport(app=puerta)
+    async with httpx.AsyncClient(
+        transport=transporte, base_url="http://clara", headers={"accept": "text/html"}
+    ) as http:
+        respuesta = await http.get("/")
+        assert respuesta.status_code == 401
+        assert "wa.me/573046411802" in respuesta.text

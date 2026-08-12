@@ -57,6 +57,24 @@ Cinco decisiones que no se leen en el código:
   cloudflared diera el origen por caído y tumbaría la demostración entera por
   defendernos de nadie.
 
+### La salida para quien no tiene código
+
+Una puerta sin timbre deja a la gente en una pantalla sin salida, y en una
+demostración eso se parece demasiado a que la solución no funciona. Con
+`WEB_WHATSAPP` puesto, la portada ofrece un enlace `wa.me` con el mensaje ya
+redactado; quien lo pulsa escribe y recibe el enlace completo por respuesta.
+
+- **Vacío por defecto.** El número no está en el repositorio ni hace falta para
+  que la puerta funcione: es un `.env`, como el código.
+- **También se ofrece con la puerta bloqueada.** Quien ha fallado cinco veces
+  suele ser justo quien no tiene el código. A quien lo esté probando a la
+  fuerza, un enlace de WhatsApp no le sirve de nada.
+- **`rel="noopener noreferrer nofollow"`**: sin `noreferrer`, la primera
+  petición le contaría a WhatsApp de dónde viene la visita —y con ella la URL,
+  que es precisamente donde puede ir el código.
+- No hay endpoint nuevo ni estado que guardar: es un enlace. En una
+  demostración, lo que no existe no se puede caer.
+
 **El fallo es abierto a propósito.** Con `WEB_CODIGO_ACCESO` vacío la puerta no
 se monta y el servidor se comporta como siempre: una puerta rota no puede
 dejar fuera a quien tiene que hacer la demostración. El arranque lo avisa con

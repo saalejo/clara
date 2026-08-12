@@ -67,7 +67,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
-from voice_agent.acceso import PuertaDeAcceso
+from voice_agent.acceso import PuertaDeAcceso, enlace_de_whatsapp
 from voice_agent.bot import _preparar_telefonia
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
@@ -565,6 +565,9 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
                 bloqueo_secs=float(config.web_acceso_bloqueo_secs),
             ),
             al_evento=lambda tipo, ip: anotar_evento(config.data_dir, tipo, ip=ip),
+            # Vacío si no hay número configurado, que es lo normal: la portada
+            # simplemente no ofrece el botón.
+            whatsapp=enlace_de_whatsapp(config.web_whatsapp, config.web_whatsapp_mensaje),
         )
         logger.info("Interfaz de llamada protegida por código de acceso")
     else:
