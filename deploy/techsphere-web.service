@@ -14,8 +14,15 @@ After=network-online.target
 
 [Service]
 Type=exec
+# No hay EnvironmentFile a propósito: pydantic-settings lee el `.env` de
+# WorkingDirectory. Añadir uno aquí pisaría el resto de la configuración.
 WorkingDirectory=%h/clara
-ExecStart=%h/.local/bin/uv run uvicorn --factory voice_agent.web:crear_app --host 0.0.0.0 --port 7860
+# Loopback, NO 0.0.0.0. cloudflared conecta aquí mismo, y el puerto abierto a
+# la red local permitiría saltarse el túnel y —peor— falsear la cabecera
+# CF-Connecting-IP, que es de donde sale la identidad del visitante para los
+# límites por IP. Por red local tampoco habría micrófono: getUserMedia no
+# existe en orígenes inseguros. Ver docs/seguridad.md.
+ExecStart=%h/.local/bin/uv run uvicorn --factory voice_agent.web:crear_app --host 127.0.0.1 --port 7860
 Restart=on-failure
 RestartSec=5
 

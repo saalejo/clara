@@ -239,6 +239,38 @@ def healthz(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"ok": True})
 
 
+# --- Portada pública ----------------------------------------------------------
+
+#: Hosts en los que la raíz enseña la portada en vez de mandar al panel.
+HOSTS_PORTAL = {"voz-digital.com", "www.voz-digital.com"}
+
+
+@login_not_required
+def portal(request: HttpRequest) -> HttpResponse:
+    """La portada pública de voz-digital.com: estática, sin sesión ni datos."""
+    return render(
+        request,
+        "panel/portal.html",
+        {
+            "url_voz": "https://clara.voz-digital.com",
+            "url_panel": "https://panel.voz-digital.com",
+        },
+    )
+
+
+@login_not_required
+def raiz(request: HttpRequest) -> HttpResponse:
+    """Reparte la raíz según el host: portada en el dominio público, panel en el resto.
+
+    El panel no tiene enrutado por host —panel.voz-digital.com y el acceso por
+    LAN llegan igual—, así que la única raíz que cambia de cara es la del
+    dominio desnudo.
+    """
+    if request.get_host().partition(":")[0].lower() in HOSTS_PORTAL:
+        return portal(request)
+    return redirect("panel")
+
+
 # --- Prompt y alma -----------------------------------------------------------
 
 

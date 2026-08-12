@@ -74,6 +74,7 @@ CAMPOS_PROTEGIDOS: frozenset[str] = frozenset(
         "groq_api_key",
         "deepgram_api_key",
         "turn_credential",
+        "web_codigo_acceso",
         "telefonia_socket_path",
     }
 )
@@ -371,6 +372,127 @@ class Settings(BaseSettings):
     turn_credential: SecretStr | None = Field(
         default=None,
         description="Credencial del servidor TURN, si `ice_servers` incluye uno.",
+    )
+
+    # --- Puerta y límites de la llamada web --------------------------------
+    # La interfaz de llamada está publicada en internet. Sin nada de esto,
+    # cualquiera que dé con la URL consume la cuota gratuita del modelo y de
+    # Deepgram, ocupa la única sesión que la placa admite y le cuelga la
+    # llamada a quien esté hablando. Ver docs/seguridad.md.
+    web_codigo_acceso: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Código que abre la interfaz de llamada. Quien la vaya a usar "
+            "recibe el enlace `https://clara.voz-digital.com/?c=CODIGO`: la "
+            "aplicación lo canjea por una galleta firmada y no vuelve a pedir "
+            "nada en WEB_ACCESO_HORAS. Vacío deja la interfaz ABIERTA, que es "
+            "lo cómodo en local y lo inaceptable en la placa. Cambiarlo "
+            "invalida todas las galletas emitidas —la clave de firma se deriva "
+            "de él—, así que rotarlo echa a quien ya hubiera entrado: no lo "
+            "rotes con una llamada en curso."
+        ),
+    )
+    web_acceso_horas: int = Field(
+        default=12,
+        gt=0,
+        le=168,
+        description=(
+            "Cuánto vale la galleta antes de volver a pedir el código. Doce "
+            "horas cubren una jornada de demostración sin obligar a volver al "
+            "correo, y caducan antes de que un portátil prestado se convierta "
+            "en un acceso permanente."
+        ),
+    )
+    web_acceso_max_intentos: int = Field(
+        default=5,
+        gt=0,
+        description=(
+            "Códigos erróneos que se toleran desde una misma IP antes de "
+            "bloquearla WEB_ACCESO_BLOQUEO_SECS. Comprobar un código cuesta un "
+            "HMAC, pero atender la petición cuesta CPU de la placa, que es la "
+            "misma que sintetiza la voz."
+        ),
+    )
+    web_acceso_bloqueo_secs: int = Field(
+        default=900,
+        ge=0,
+        description=(
+            "Castigo, en segundos, tras agotar los intentos. Durante el "
+            "bloqueo no entra ni el código correcto: si no, bastaría con "
+            "seguir probando."
+        ),
+    )
+    web_llamada_max_secs: int = Field(
+        default=900,
+        ge=0,
+        description=(
+            "Duración máxima de una llamada por navegador. A falta de "
+            "WEB_AVISO_PREVIO_SECS el agente avisa en voz alta, se despide y "
+            "cuelga; el resumen y la traza se guardan igual. 0 la deja sin "
+            "límite. Existe porque una llamada eterna consume cuota gratuita y "
+            "ocupa la única sesión que cabe en la placa."
+        ),
+    )
+    web_aviso_previo_secs: int = Field(
+        default=60,
+        ge=0,
+        description=(
+            "Cuánto antes del corte avisa el agente de que se acaba el tiempo. "
+            "Cortar sin avisar en una llamada clínica parece una avería."
+        ),
+    )
+    web_aviso_cierre: str = Field(
+        default=("Nos queda un minuto de llamada. Si te queda algo por contarme, es buen momento."),
+        description=(
+            "Lo que se dice al faltar WEB_AVISO_PREVIO_SECS. Es texto fijo y "
+            "no pasa por el modelo, a propósito: tiene que sonar sí o sí."
+        ),
+    )
+    web_despedida_cierre: str = Field(
+        default=(
+            "Se nos acabó el tiempo de esta llamada. Si algo empeora, "
+            "comunícate con tu equipo médico. Cuídate."
+        ),
+        description="Lo último que se dice antes de colgar por tiempo agotado.",
+    )
+    web_cierre_gracia_secs: float = Field(
+        default=8.0,
+        gt=0,
+        description=(
+            "Margen que se le da a la despedida para sonar entera antes de cortar la conexión."
+        ),
+    )
+    web_inactividad_secs: int = Field(
+        default=300,
+        ge=0,
+        description=(
+            "Silencio absoluto tras el que se cuelga. Antes no había límite "
+            "('el jurado puede quedarse callado pensando'), pero una pestaña "
+            "abierta y olvidada mantiene viva la conexión de streaming con "
+            "Deepgram, que se factura por tiempo conectado. Cinco minutos "
+            "sobran para pensar una respuesta. 0 lo desactiva."
+        ),
+    )
+    web_espera_sesion_secs: float = Field(
+        default=8.0,
+        ge=0,
+        description=(
+            "Cuánto se espera a que la sesión anterior demuestre que ya no "
+            "está antes de rechazar una llamada nueva con un 409. Existe por "
+            "la pestaña recargada: su conexión tarda unos segundos en "
+            "delatarse, y sin esta espera quien recarga se comería un error. "
+            "0 rechaza en seco."
+        ),
+    )
+    web_llamadas_max_por_hora: int = Field(
+        default=12,
+        ge=0,
+        description=(
+            "Llamadas que se le aceptan a una misma IP por hora. Es la red que "
+            "queda si el código de acceso se filtra: el enlace compartido no "
+            "se convierte en barra libre de minutos de transcripción. 0 lo "
+            "desactiva."
+        ),
     )
 
     # --- TTS ---------------------------------------------------------------

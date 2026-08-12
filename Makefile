@@ -129,8 +129,10 @@ run:  ## Arranca el agente en local (fuera del contenedor)
 
 # `--factory` porque `crear_app` es una factoría: importar el módulo no carga
 # configuración ni modelos; eso pasa en el lifespan, al arrancar de verdad.
-# 0.0.0.0 para que el túnel (o la LAN) llegue; el micrófono del navegador solo
-# funciona vía HTTPS o localhost, así que el acceso real va por el túnel.
+# 0.0.0.0 aquí, para poder probar desde el móvil en la LAN; el micrófono del
+# navegador solo funciona vía HTTPS o localhost, así que el acceso real va por
+# el túnel. OJO: la unidad de systemd escucha en 127.0.0.1 y esa diferencia es
+# deliberada, no un descuido — ver docs/seguridad.md. No las unifiques.
 .PHONY: run-web
 run-web:  ## Arranca la interfaz de llamada por navegador (puerto 7860)
 	uv run uvicorn --factory voice_agent.web:crear_app --host 0.0.0.0 --port 7860

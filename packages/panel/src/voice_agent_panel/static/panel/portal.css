@@ -1,0 +1,260 @@
+/* Portada pública de voz-digital.com. Grafito sobre papel: fondo claro con
+ * grano, trazos a mano (radios asimétricos + filtros SVG del propio HTML) y
+ * un único acento azul eléctrico. Sin frameworks, sin fuentes externas: la
+ * placa sirve la página entera. */
+
+:root {
+  --papel: #f6f2e9;
+  --papel-hueso: #efe9dc;
+  --grafito: #2b2e33;
+  --grafito-suave: #5f6570;
+  --acento: #2456ff;
+  /* El radio asimétrico que hace que un borde recto parezca trazado a mano. */
+  --trazo: 255px 15px 225px 15px / 15px 225px 15px 255px;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+body {
+  background: var(--papel);
+  color: var(--grafito);
+  font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Grano de papel: ruido fractal en un SVG embebido, fijo sobre toda la página. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23g)'/></svg>");
+}
+
+.defs { position: absolute; }
+
+/* --- Cabecera --------------------------------------------------------------- */
+
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1.4rem clamp(1.2rem, 5vw, 3rem);
+  border-bottom: 2px solid var(--grafito);
+  border-radius: 0 0 340px 18px / 0 0 12px 28px;
+}
+
+.marca {
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.insignia {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--grafito-suave);
+  border: 1.5px solid var(--grafito-suave);
+  border-radius: var(--trazo);
+  padding: 0.15rem 0.7rem;
+  white-space: nowrap;
+  rotate: -0.6deg;
+}
+
+.estrella { color: var(--acento); }
+
+/* --- Héroe ------------------------------------------------------------------ */
+
+main {
+  width: min(56rem, 100% - 2.4rem);
+  margin: 0 auto;
+  flex: 1;
+}
+
+.heroe { padding: clamp(3rem, 9vh, 5.5rem) 0 2.5rem; }
+
+.pauta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--grafito-suave);
+}
+
+.heroe h1 {
+  font-size: clamp(3.4rem, 12vw, 6.5rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.05;
+}
+
+.subrayado {
+  display: block;
+  width: min(21rem, 80%);
+  height: 26px;
+  margin: -0.4rem 0 1rem 0.2rem;
+  fill: none;
+  stroke: var(--acento);
+  stroke-linecap: round;
+}
+
+.subrayado path { stroke-width: 3.5; }
+.subrayado .repaso { stroke-width: 2; opacity: 0.45; }
+
+.lema {
+  font-size: clamp(1.1rem, 3vw, 1.35rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.parrafo {
+  max-width: 34rem;
+  margin-top: 0.9rem;
+  color: var(--grafito-suave);
+}
+
+/* --- Botones ------------------------------------------------------------------
+ * Trazo doble: el borde del elemento y un ::before ligeramente girado, como
+ * cuando se repasa una línea a lápiz. */
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.cta {
+  position: relative;
+  display: inline-block;
+  padding: 0.75rem 1.8rem;
+  font-weight: 700;
+  font-size: 1.02rem;
+  text-decoration: none;
+  border: 2px solid var(--grafito);
+  border-radius: var(--trazo);
+  transition: rotate 0.15s ease, translate 0.15s ease;
+}
+
+.cta::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1.5px solid currentColor;
+  border-radius: 15px 255px 15px 225px / 225px 15px 255px 15px;
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.cta:hover, .cta:focus-visible { rotate: -1deg; translate: 0 -2px; }
+.cta:focus-visible { outline: 3px dashed var(--acento); outline-offset: 4px; }
+
+.cta.principal {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: var(--papel);
+  rotate: -0.5deg;
+}
+
+.cta.secundaria { color: var(--grafito); rotate: 0.4deg; }
+
+/* --- Secciones ---------------------------------------------------------------- */
+
+h2 {
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--grafito-suave);
+  margin-bottom: 1.4rem;
+}
+
+h2::after {
+  content: "";
+  display: inline-block;
+  width: 3.5rem;
+  margin-left: 0.8rem;
+  border-top: 2px solid var(--acento);
+  vertical-align: 0.3em;
+  transform: rotate(-1.2deg);
+}
+
+.pasos { padding: 2.5rem 0; }
+
+.rejilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1.4rem;
+}
+
+.tarjeta {
+  background: var(--papel-hueso);
+  border: 2px solid var(--grafito);
+  border-radius: var(--trazo);
+  padding: 1.4rem 1.3rem 1.2rem;
+}
+
+.rejilla .tarjeta:nth-child(odd) { rotate: -0.5deg; }
+.rejilla .tarjeta:nth-child(even) { rotate: 0.45deg; }
+
+.numero {
+  display: inline-grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-bottom: 0.7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  color: var(--acento);
+  border: 2px solid var(--acento);
+  border-radius: 55% 45% 48% 52% / 48% 55% 45% 52%;
+  rotate: -4deg;
+}
+
+.tarjeta h3 { font-size: 1.05rem; letter-spacing: 0.02em; }
+.tarjeta p { margin-top: 0.4rem; font-size: 0.93rem; color: var(--grafito-suave); }
+
+.cirugias { padding: 1rem 0 3rem; }
+
+.fichas {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.fichas li {
+  border: 1.5px solid var(--grafito-suave);
+  border-radius: var(--trazo);
+  padding: 0.3rem 0.95rem;
+  font-size: 0.9rem;
+}
+
+.fichas li:nth-child(odd) { rotate: -0.8deg; }
+.fichas li:nth-child(even) { rotate: 0.7deg; }
+
+/* --- Pie ------------------------------------------------------------------------ */
+
+.pie {
+  border-top: 2px solid var(--grafito);
+  border-radius: 320px 0 0 0 / 22px 0 0 0;
+  padding: 1.3rem clamp(1.2rem, 5vw, 3rem) 1.6rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  color: var(--grafito-suave);
+}
+
+@media (max-width: 640px) {
+  .cabecera { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .acciones .cta { width: 100%; text-align: center; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta { transition: none; }
+}

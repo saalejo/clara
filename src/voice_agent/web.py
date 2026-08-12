@@ -15,7 +15,12 @@ Decisiones que no son obvias mirando el código:
   TTS) se carga al arrancar el servidor y se repone al colgar.
 * **Una sola conexión a la vez** (`ConnectionMode.SINGLE`). La placa tiene
   3,8 GB de RAM y la evaluación es una sesión: dos pipelines simultáneos no
-  aportan nada y compiten por la CPU con la síntesis de voz.
+  aportan nada y compiten por la CPU con la síntesis de voz. Y precisamente
+  porque solo cabe una, **no se desaloja a quien está hablando**: ver
+  `_esperar_hueco`.
+* **Detrás de una puerta.** Esto está publicado en internet; sin código de
+  acceso, cualquiera gasta la cuota gratuita del modelo y ocupa la sesión.
+  Ver `voice_agent.acceso` y `docs/seguridad.md`.
 * **Sin compuerta de micrófono ni semidúplex.** El navegador aplica
   cancelación de eco acústico en `getUserMedia` (activada por defecto), así
   que aquí sí se puede interrumpir al agente (*barge-in*), que es la
@@ -35,10 +40,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 from pipecat.frames.frames import TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -60,6 +67,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
+from voice_agent.acceso import PuertaDeAcceso
 from voice_agent.bot import _preparar_telefonia
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
@@ -81,6 +89,7 @@ from voice_agent.tools import herramientas_activas
 from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings, get_settings
 from voice_agent_core.historial import HistorialPacientes
+from voice_agent_core.limitador import LimitadorDeIntentos, ip_del_cliente
 from voice_agent_core.runtime import RuntimeConfig, cargar_runtime
 from voice_agent_core.rutas import ruta_historial, ruta_log_agente
 
@@ -218,6 +227,75 @@ class ServiciosWeb:
         return trio
 
 
+def _hay_llamada_viva(handler: SmallWebRTCRequestHandler) -> bool:
+    """¿Hay alguien realmente al teléfono ahora mismo?
+
+    `is_connected()` de pipecat no mira el estado de aiortc —que tarda decenas
+    de segundos en enterarse de una pestaña cerrada— sino la hora del último
+    ping del cliente: es `False` a los tres segundos de que el navegador deje
+    de dar señales. Eso es justo lo que distingue una sesión zombi (pestaña
+    recargada, portátil suspendido) de una llamada viva.
+    """
+    return any(conexion.is_connected() for conexion in handler._pcs_map.values())
+
+
+async def _esperar_hueco(
+    handler: SmallWebRTCRequestHandler, cerrojo: asyncio.Lock, espera_secs: float
+) -> bool:
+    """Espera, poco, a que la sesión anterior demuestre que ya no está.
+
+    Rechazar en seco reintroduciría por la puerta de atrás el fallo que
+    arregló el "gana la última conexión": al recargar la pestaña, la sesión
+    previa tarda unos segundos en delatarse y quien recarga se comería un 409.
+    Sondeando el latido unos segundos, la pestaña recargada solo nota un
+    arranque un pelín más lento, y a quien intenta echar a otro se le dice que
+    no.
+
+    El cerrojo evita que veinte peticiones a la vez sean veinte tareas
+    dormidas: solo se admite una espera simultánea.
+    """
+    if not _hay_llamada_viva(handler):
+        return True
+    if espera_secs <= 0 or cerrojo.locked():
+        return False
+    async with cerrojo:
+        limite = time.monotonic() + espera_secs
+        while time.monotonic() < limite:
+            await asyncio.sleep(0.5)
+            if not _hay_llamada_viva(handler):
+                return True
+    return False
+
+
+async def _vigilar_duracion(
+    worker: PipelineWorker,
+    conexion: SmallWebRTCConnection,
+    settings: Settings,
+    id_llamada: str,
+) -> None:
+    """Avisa, se despide y cuelga cuando la llamada se pasa de larga.
+
+    El aviso va como `TTSSpeakFrame`, igual que el saludo de `_saludar`:
+    cortar sin avisar en una llamada clínica es maleducado y encima parece una
+    avería. No se encola un `EndFrame` sino que se desconecta el transporte,
+    porque lo que se está defendiendo aquí es la CPU de la placa y el corte
+    tiene que llegar aunque el pipeline esté atascado.
+
+    Al colgar por aquí, el `finally` de `_conversar` sigue anotando el fin y
+    guardando el resumen: una llamada cortada por tiempo deja su traza igual.
+    """
+    aviso = settings.web_llamada_max_secs - settings.web_aviso_previo_secs
+    if aviso > 0:
+        await asyncio.sleep(aviso)
+        await worker.queue_frames([TTSSpeakFrame(text=settings.web_aviso_cierre)])
+    await asyncio.sleep(min(settings.web_aviso_previo_secs, settings.web_llamada_max_secs))
+    await worker.queue_frames([TTSSpeakFrame(text=settings.web_despedida_cierre)])
+    anotar_evento(settings.data_dir, "llamada_cortada_por_tiempo", id_llamada=id_llamada)
+    await asyncio.sleep(settings.web_cierre_gracia_secs)
+    logger.info("Llamada cortada por alcanzar la duración máxima")
+    await conexion.disconnect()  # type: ignore[no-untyped-call]
+
+
 async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -> None:
     """Monta el pipeline sobre la conexión WebRTC y conversa hasta que cuelguen.
 
@@ -303,9 +381,13 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
 
         worker = PipelineWorker(
             pipeline,
-            # Colgar es la única forma normal de terminar; el jurado puede
-            # quedarse callado pensando sin que se le cuelgue.
-            idle_timeout_secs=None,
+            # Antes era None ("colgar es la única forma normal de terminar; el
+            # jurado puede quedarse callado pensando"). Ya no: una pestaña
+            # abierta y olvidada mantiene viva la conexión de streaming con
+            # Deepgram, que se factura por tiempo conectado y tiene cuota
+            # gratuita. Cinco minutos de silencio absoluto son de sobra para
+            # pensar una respuesta.
+            idle_timeout_secs=settings.web_inactividad_secs or None,
             params=PipelineParams(
                 audio_in_sample_rate=settings.audio_sample_rate,
                 audio_out_sample_rate=settings.audio_sample_rate,
@@ -332,9 +414,18 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
 
         logger.info("Pipeline web montado; esperando audio del navegador")
         anotar_evento(settings.data_dir, "llamada_inicio", id_llamada=id_llamada)
+        vigilante: asyncio.Task[None] | None = None
+        if settings.web_llamada_max_secs > 0:
+            vigilante = asyncio.create_task(
+                _vigilar_duracion(worker, conexion, settings, id_llamada)
+            )
         try:
             await WorkerRunner().run(worker)
         finally:
+            if vigilante is not None:
+                vigilante.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await vigilante
             anotar_evento(settings.data_dir, "llamada_fin", id_llamada=id_llamada)
             if recursos is not None:
                 resumen_de_respaldo(recursos, contexto)
@@ -385,6 +476,20 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
         _app.state.handler = SmallWebRTCRequestHandler(
             ice_servers=_servidores_ice(config),
             connection_mode=ConnectionMode.SINGLE,
+        )
+        # Solo una petición espera a la vez a que se libere la sesión.
+        _app.state.cerrojo_sesion = asyncio.Lock()
+        # La red que queda si el código de acceso se filtra: el enlace
+        # compartido no se convierte en barra libre de minutos de
+        # transcripción. Es de llamadas ACEPTADAS, no de intentos, así que un
+        # "olvidar" no tendría sentido aquí.
+        # El castigo dura lo mismo que la ventana: alcanzado el tope, hay que
+        # esperar una hora desde la última llamada aceptada. Con un castigo de
+        # 0 el cubo se daría por vencido al instante y no frenaría nada.
+        _app.state.cuota_llamadas = LimitadorDeIntentos(
+            max_intentos=config.web_llamadas_max_por_hora,
+            ventana_secs=3600.0,
+            bloqueo_secs=3600.0,
         )
 
         # --- Telefonía: la otra superficie, coexistiendo con el navegador ---
@@ -445,27 +550,101 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Llamada de voz — seguimiento postoperatorio", lifespan=_vida)
 
-    @app.post("/api/offer")
-    async def _ofertar(request: Request) -> dict[str, str] | None:
+    # La puerta se instala aquí y no junto a las rutas: un middleware envuelve
+    # al router entero, así que el `mount("/")` del final también queda detrás.
+    # Sin código configurado no se monta nada y el servidor se comporta como
+    # siempre, que es lo que mantiene `make run-web` usable sin ceremonia.
+    codigo = config.web_codigo_acceso.get_secret_value() if config.web_codigo_acceso else ""
+    if codigo:
+        app.add_middleware(
+            PuertaDeAcceso,
+            codigo=codigo,
+            duracion_secs=config.web_acceso_horas * 3600,
+            limitador=LimitadorDeIntentos(
+                max_intentos=config.web_acceso_max_intentos,
+                bloqueo_secs=float(config.web_acceso_bloqueo_secs),
+            ),
+            al_evento=lambda tipo, ip: anotar_evento(config.data_dir, tipo, ip=ip),
+        )
+        logger.info("Interfaz de llamada protegida por código de acceso")
+    else:
+        logger.warning(
+            "WEB_CODIGO_ACCESO está vacío: la interfaz de llamada queda ABIERTA a "
+            "cualquiera que conozca la URL. En la placa esto no debería pasar."
+        )
+
+    # `response_model=None` es obligatorio: el tipo de retorno es una unión con
+    # `JSONResponse` (los rechazos por ocupado o por cuota) y FastAPI intenta
+    # derivar de él un modelo de Pydantic. Sin esto, `crear_app` lanza
+    # `FastAPIError` AL ARRANCAR, no al llamar a la ruta.
+    @app.post("/api/offer", response_model=None)
+    async def _ofertar(request: Request) -> dict[str, str] | JSONResponse | None:
         """Negocia la sesión WebRTC con el navegador y arranca la conversación."""
+        # Una oferta SDP legítima no llega a 10 KB. Leer megabytes en memoria
+        # para descartarlos después sería regalarle la RAM de la placa a quien
+        # ya tenga la galleta.
+        if int(request.headers.get("content-length") or 0) > 64 * 1024:
+            return JSONResponse({"error": "oferta_demasiado_grande"}, status_code=413)
+
         cuerpo = await request.json()
         oferta = SmallWebRTCRequest.from_dict(cuerpo)
         handler: SmallWebRTCRequestHandler = request.app.state.handler
         servicios: ServiciosWeb = request.app.state.servicios
 
-        # Gana la última conexión. En modo SINGLE, una sesión anterior que no
-        # llegó a cerrarse (una pestaña recargada, un portátil suspendido)
-        # queda zombi en el handler y rechaza toda oferta nueva con un 400 —
-        # pasó en una prueba real: recargar la página bloqueaba la interfaz
-        # hasta reiniciar el servicio. Si llega una oferta sin pc_id (una
-        # sesión nueva de verdad), la anterior está muerta o va a morir:
-        # desconectarla desmonta su pipeline por el evento "closed" y deja el
-        # sitio libre. Un juez que recarga la pestaña siempre puede volver.
+        # Antes ganaba SIEMPRE la última conexión: cualquier oferta sin pc_id
+        # desconectaba la sesión en curso. Eso arreglaba un fallo real —una
+        # pestaña recargada dejaba un zombi en el handler que rechazaba toda
+        # oferta nueva con un 400, y había que reiniciar el servicio— pero
+        # permitía que un tercero le cortara la palabra al que estuviera
+        # hablando, en bucle. Ahora solo se desaloja a quien ya no da señales
+        # de vida; a quien está hablando se le respeta y al recién llegado se
+        # le dice que espere.
         if oferta.pc_id is None:
+            # La cuota se mira ANTES de esperar hueco y antes de desmontar
+            # nada: es la comprobación más barata y no tiene sentido esperar
+            # ocho segundos para acabar rechazando.
+            cuota: LimitadorDeIntentos = request.app.state.cuota_llamadas
+            ip = ip_del_cliente(request.headers, request.client.host if request.client else None)
+            if cuota.max_intentos > 0 and not cuota.permitido(ip):
+                logger.warning(f"Cuota de llamadas agotada para {ip}")
+                anotar_evento(servicios.settings.data_dir, "cuota_agotada", ip=ip)
+                return JSONResponse(
+                    {
+                        "error": "cuota_agotada",
+                        "mensaje": (
+                            "Se alcanzó el número de llamadas por hora de esta "
+                            "demostración. Vuelve a intentarlo más tarde."
+                        ),
+                    },
+                    status_code=429,
+                    headers={"Retry-After": "600"},
+                )
+
+            hueco = await _esperar_hueco(
+                handler,
+                request.app.state.cerrojo_sesion,
+                servicios.settings.web_espera_sesion_secs,
+            )
+            if not hueco:
+                logger.info("Oferta rechazada: hay una llamada en curso")
+                return JSONResponse(
+                    {
+                        "error": "ocupado",
+                        "mensaje": (
+                            "Clara está atendiendo otra llamada. Inténtalo de nuevo en un minuto."
+                        ),
+                    },
+                    status_code=409,
+                    headers={"Retry-After": "30"},
+                )
             for conexion_previa in list(handler._pcs_map.values()):
                 logger.info(f"Desconectando la sesión previa {conexion_previa.pc_id}")
                 await conexion_previa.disconnect()  # type: ignore[no-untyped-call]
             handler._pcs_map.clear()
+
+            # Solo se cuenta la llamada que de verdad se va a atender.
+            if cuota.max_intentos > 0:
+                cuota.anotar_fallo(ip)
 
         async def _al_conectar(conexion: SmallWebRTCConnection) -> None:
             # La conversación corre en su propia tarea: esta petición HTTP
@@ -483,7 +662,8 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
         return {"estado": "ok"}
 
     # La UI va al final: monta en `/` y se quedaría con todas las rutas que se
-    # declaren después.
+    # declaren después. La puerta no se ve afectada por esto: un middleware
+    # envuelve al router entero, no compite con sus rutas.
     app.mount("/", SmallWebRTCPrebuiltUI)
 
     return app

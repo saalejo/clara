@@ -107,9 +107,13 @@ consultó, qué recuperó, qué persistió) y los ficheros de evaluación.
   dirigidas al modelo se trata como texto citado.
 - Prohibición absoluta de dosis y pautas de medicación, incluso si aparecen
   en un documento.
-- La consola exige autenticación; los hooks de comandos están desactivados en
-  el despliegue expuesto; las claves de API viven solo en el `.env` de la
-  placa.
+- La consola exige autenticación —con freno de fuerza bruta por IP— y la
+  interfaz de voz, un código de acceso que viaja en el enlace y se canjea por
+  una galleta firmada. Los hooks de comandos están desactivados en el
+  despliegue expuesto; las claves de API viven solo en el `.env` de la placa.
+- La superficie expuesta tiene límites propios: una conversación a la vez, con
+  tope de duración e inactividad y cuota de llamadas por IP. Una llamada nueva
+  no desaloja a quien está hablando. Ver `docs/seguridad.md`.
 
 ## 7. Limitaciones conocidas
 

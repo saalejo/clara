@@ -172,11 +172,35 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Strict"
 SESSION_COOKIE_AGE = 8 * 60 * 60
 CSRF_COOKIE_SAMESITE = "Strict"
-# Va por HTTP plano sobre loopback y un túnel SSH: exigir cookies seguras
-# impediría entrar. Si algún día esto se pone detrás de TLS, enciéndelas.
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
+
+#: El panel está detrás de un proxy que termina TLS (el túnel de Cloudflare).
+#: Enciende las galletas seguras y le dice a Django que mire
+#: `X-Forwarded-Proto`, porque a uvicorn la petición le llega como http sobre
+#: loopback y sin eso `request.is_secure()` miente.
+#:
+#: Apagado por defecto para que `make panel` y los tests —que van por http—
+#: sigan pudiendo entrar: una galleta `Secure` sobre http se descarta en
+#: silencio y el login se queda en un bucle sin un solo mensaje de error.
+TRAS_TLS = os.environ.get("PANEL_TRAS_TLS", "0") == "1"
+SESSION_COOKIE_SECURE = TRAS_TLS
+CSRF_COOKIE_SECURE = TRAS_TLS
+if TRAS_TLS:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 CSRF_TRUSTED_ORIGINS = [o for o in os.environ.get("PANEL_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
+
+# Que esto reviente al arrancar es el objetivo, no un descuido. En cuanto
+# Django se cree que la conexión es https, activa la comprobación estricta de
+# Origin/Referer en cada POST: sin orígenes de confianza, TODO el panel
+# —guardar ajustes, reiniciar el agente, subir un documento y reindexar—
+# empieza a responder 403, mientras los GET siguen perfectos. El síntoma no
+# apunta a las galletas por ningún lado.
+if TRAS_TLS and not CSRF_TRUSTED_ORIGINS:
+    raise ImproperlyConfigured(
+        "PANEL_TRAS_TLS=1 sin PANEL_CSRF_TRUSTED_ORIGINS. Todo POST del panel "
+        "respondería 403 'Origin checking failed'. Añade a .env.panel:\n"
+        "    PANEL_CSRF_TRUSTED_ORIGINS=https://panel.voz-digital.com"
+    )
 
 X_FRAME_OPTIONS = "DENY"
 SECURE_CONTENT_TYPE_NOSNIFF = True

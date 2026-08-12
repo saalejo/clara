@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ssh nanopi *)"
+      "Bash(ssh nanopi *)",
+      "mcp__plugin_cloudflare_cloudflare-api__execute",
+      "Bash(scp -q /tmp/claude-1000/-home-ember-Documentos-git-clara/f643a8e5-bd34-4450-9500-019a4028ade7/scratchpad/prueba_turn.py nanopi:/tmp/prueba_turn.py)"
     ]
   }
 }

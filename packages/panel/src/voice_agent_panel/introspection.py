@@ -40,6 +40,7 @@ SECCIONES: list[tuple[str, tuple[str, ...]]] = [
     ("Audio y detección de voz", ("audio_", "vad_", "user_speech_", "mic_gate_")),
     ("Muletillas", ("filler_",)),
     ("Base de conocimiento (RAG)", ("chroma_", "embedding_", "rag_", "chunk_")),
+    ("Llamada por navegador", ("web_", "ice_", "turn_")),
 ]
 
 

@@ -17,13 +17,20 @@ por el navegador. Se recomienda **usar auriculares** para la llamada.
 
 | Superficie | URL | Credenciales |
 |---|---|---|
-| **Interfaz de llamada** (hablar con Clara) | https://clara.voz-digital.com | — |
-| **Consola de administración** (conocimiento vivo) | https://panel.voz-digital.com/panel/ | usuario `jurado` · contraseña `Clara2026.postop` |
+| **Interfaz de llamada** (hablar con Clara) | https://clara.voz-digital.com | el enlace **con el código ya puesto** va en el correo de entrega |
+| **Consola de administración** (conocimiento vivo) | https://panel.voz-digital.com/panel/ | usuario y contraseña, en el correo de entrega |
+
+> Las credenciales no se publican aquí porque este repositorio es público.
+> Ambas viajan en el correo de entrega. La interfaz de llamada está detrás de
+> un código de acceso —detrás hay una placa de 4 GB, una cuota gratuita de
+> modelo y **una sola conversación a la vez**— pero el enlace del correo lo
+> lleva dentro: se abre y ya está, no hay nada que teclear. El porqué de cada
+> medida está en [docs/seguridad.md](docs/seguridad.md).
 
 Pasos:
 
-1. Abrir la interfaz de llamada, pulsar **Connect** y aceptar el permiso de
-   micrófono. Clara saluda en un par de segundos; a partir de ahí es una
+1. Abrir el enlace de la interfaz de llamada, pulsar **Connect** y aceptar el
+   permiso de micrófono. Clara saluda en un par de segundos; a partir de ahí es una
    conversación normal (se puede interrumpir mientras habla).
 2. Para el conocimiento vivo: entrar a la consola → **Conocimiento** → subir un
    PDF o Markdown al tema que se quiera → pulsar **Reindexar**. Al terminar la
@@ -108,7 +115,7 @@ Decisiones clave, con su porqué:
 
 | Compuerta | Cómo se cumple |
 |---|---|
-| **G2** — levantable en ≤15 min | La solución ya corre en la placa; el acceso es abrir dos URLs con las credenciales de arriba. |
+| **G2** — levantable en ≤15 min | La solución ya corre en la placa; el acceso es abrir los dos enlaces del correo de entrega. |
 | **G3** — modelo permitido | `gemini-2.5-flash` (familia Gemini Flash, nivel gratuito de AI Studio). Declarado aquí, en el informe y verificable en `packages/core/src/voice_agent_core/config.py` y `src/voice_agent/services.py`. |
 | **G4** — voz en tiempo real por navegador | https://clara.voz-digital.com — micrófono y voz por WebRTC, con interrupciones (*barge-in*). |
 | **G5** — conocimiento vivo desde la consola | Panel → Conocimiento: subir → Reindexar → el agente lo usa; eliminar → Reindexar → lo olvida. Sin reinicios. |
@@ -164,9 +171,15 @@ precio de que cada respuesta esté anclada en documentos.
   modelo se trata como texto citado.
 - El agente no puede indicar dosis ni pautas de medicación, ni siquiera si
   aparecen en un documento: remite al médico tratante.
-- La consola exige usuario y contraseña; la edición de hooks de comandos está
-  desactivada en el despliegue expuesto; las claves de API viven solo en el
-  `.env` de la placa y el panel ni las lee ni las muestra.
+- La consola exige usuario y contraseña, con freno de fuerza bruta por IP; la
+  edición de hooks de comandos está desactivada en el despliegue expuesto; las
+  claves de API viven solo en el `.env` de la placa y el panel ni las lee ni
+  las muestra.
+- La interfaz de llamada está detrás de un código de acceso que viaja dentro
+  del enlace y se canjea por una galleta firmada (HMAC), y tiene límites de
+  duración, de inactividad y de llamadas por hora. Una llamada nueva **no
+  desaloja a quien está hablando**. Todo el razonamiento, en
+  [docs/seguridad.md](docs/seguridad.md).
 
 ## Limitaciones conocidas
 

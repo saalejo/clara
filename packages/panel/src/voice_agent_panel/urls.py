@@ -9,19 +9,18 @@ from __future__ import annotations
 
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from django.views.generic import RedirectView
 
-from voice_agent_panel import views
+from voice_agent_panel import acceso, views
 
 urlpatterns = [
-    path("", RedirectView.as_view(url="/panel/", permanent=False)),
+    # La raíz cambia de cara según el host: portada pública en voz-digital.com,
+    # redirección al panel en el resto. Ver `views.raiz`.
+    path("", views.raiz, name="raiz"),
+    path("portal/", views.portal, name="portal"),
     path("healthz", views.healthz, name="healthz"),
     path("panel/", views.panel, name="panel"),
-    path(
-        "panel/entrar/",
-        auth_views.LoginView.as_view(template_name="panel/entrar.html"),
-        name="login",
-    ),
+    # El nombre "login" es el que usan LOGIN_URL y los reverse de los tests.
+    path("panel/entrar/", acceso.VistaEntrar.as_view(), name="login"),
     path("panel/salir/", auth_views.LogoutView.as_view(), name="logout"),
     path("panel/perfiles/", views.perfiles_lista, name="perfiles"),
     path("panel/perfiles/<int:pk>/editar/", views.perfil_editar, name="perfil_editar"),

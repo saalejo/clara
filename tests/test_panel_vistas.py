@@ -89,6 +89,30 @@ def test_la_comprobacion_de_salud_es_publica(client: Client) -> None:
     assert client.get("/healthz").status_code == 200
 
 
+# --- Portada pública -----------------------------------------------------------
+
+
+def test_la_portada_es_publica(client: Client) -> None:
+    respuesta = client.get(reverse("portal"))
+    assert respuesta.status_code == 200
+    assert "Clara" in respuesta.content.decode()
+
+
+def test_la_raiz_muestra_la_portada_en_el_dominio_publico(client: Client) -> None:
+    from django.test import override_settings
+
+    with override_settings(ALLOWED_HOSTS=["voz-digital.com"]):
+        respuesta = client.get("/", HTTP_HOST="voz-digital.com")
+    assert respuesta.status_code == 200
+    assert "Clara" in respuesta.content.decode()
+
+
+def test_la_raiz_sigue_mandando_al_panel_en_los_demas_hosts(client: Client) -> None:
+    respuesta = client.get("/")
+    assert respuesta.status_code == 302
+    assert respuesta["Location"] == "/panel/"
+
+
 @pytest.mark.parametrize("nombre", RUTAS_PRIVADAS_POST)
 def test_las_acciones_tambien_estan_cerradas(client: Client, nombre: str) -> None:
     # El middleware corre antes que `@require_POST`, así que un anónimo se topa

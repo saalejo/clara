@@ -3,6 +3,13 @@
 # Lleva la clave secreta de Django y la contraseña del panel.
 .env.panel
 .env.telefonia
+# Y cualquier copia de seguridad de los anteriores. Se listan aparte porque
+# `.env` no cubre `.env.bak-…`, y una copia hecha antes de tocar la
+# configuración lleva exactamente las mismas claves que el original: en un
+# repositorio público, el mismo estropicio.
+.env.*.bak
+.env.bak*
+.env.*bak*
 
 # Estáticos recogidos por collectstatic; se generan al construir la imagen.
 packages/panel/src/voice_agent_panel/staticfiles/

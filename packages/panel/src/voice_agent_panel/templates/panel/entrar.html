@@ -5,9 +5,16 @@
 <p class="pie">Desde aquí se configura y se controla el agente. Hay que identificarse.</p>
 <form method="post" class="tarjeta" style="max-width:24rem">
   {% csrf_token %}
-  {% if form.errors %}<p class="errores">Usuario o contraseña incorrectos.</p>{% endif %}
+  {% if bloqueado %}
+    <p class="errores">Demasiados intentos fallidos. Vuelve a intentarlo en
+    {{ minutos }} minuto{{ minutos|pluralize }}.</p>
+  {% elif form.errors %}
+    <p class="errores">Usuario o contraseña incorrectos.</p>
+  {% endif %}
   <label for="id_username">Usuario</label>{{ form.username }}
   <label for="id_password">Contraseña</label>{{ form.password }}
-  <div class="acciones"><button class="principal" type="submit">Entrar</button></div>
+  <div class="acciones">
+    <button class="principal" type="submit" {% if bloqueado %}disabled{% endif %}>Entrar</button>
+  </div>
 </form>
 {% endblock %}
