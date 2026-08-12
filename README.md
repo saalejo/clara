@@ -17,7 +17,7 @@ por el navegador. Se recomienda **usar auriculares** para la llamada.
 
 | Superficie | URL | Credenciales |
 |---|---|---|
-| **Interfaz de llamada** (hablar con Clara) | https://voz.voz-digital.com | — |
+| **Interfaz de llamada** (hablar con Clara) | https://clara.voz-digital.com | — |
 | **Consola de administración** (conocimiento vivo) | https://panel.voz-digital.com/panel/ | usuario `jurado` · contraseña `Clara2026.postop` |
 
 Pasos:
@@ -110,7 +110,7 @@ Decisiones clave, con su porqué:
 |---|---|
 | **G2** — levantable en ≤15 min | La solución ya corre en la placa; el acceso es abrir dos URLs con las credenciales de arriba. |
 | **G3** — modelo permitido | `gemini-2.5-flash` (familia Gemini Flash, nivel gratuito de AI Studio). Declarado aquí, en el informe y verificable en `packages/core/src/voice_agent_core/config.py` y `src/voice_agent/services.py`. |
-| **G4** — voz en tiempo real por navegador | https://voz.voz-digital.com — micrófono y voz por WebRTC, con interrupciones (*barge-in*). |
+| **G4** — voz en tiempo real por navegador | https://clara.voz-digital.com — micrófono y voz por WebRTC, con interrupciones (*barge-in*). |
 | **G5** — conocimiento vivo desde la consola | Panel → Conocimiento: subir → Reindexar → el agente lo usa; eliminar → Reindexar → lo olvida. Sin reinicios. |
 
 ## Métricas medidas

@@ -1,5 +1,5 @@
 # El túnel de Cloudflare que expone las dos superficies al jurado:
-#   voz.voz-digital.com   -> localhost:7860  (interfaz de llamada)
+#   clara.voz-digital.com   -> localhost:7860  (interfaz de llamada)
 #   panel.voz-digital.com -> localhost:8081  (consola de administración)
 #
 # Es un túnel con nombre gestionado localmente: las credenciales viven en
@@ -8,7 +8,7 @@
 #
 # Creación (una vez, requiere `cloudflared tunnel login`):
 #   cloudflared tunnel create clara
-#   cloudflared tunnel route dns clara voz.voz-digital.com
+#   cloudflared tunnel route dns clara clara.voz-digital.com
 #   cloudflared tunnel route dns clara panel.voz-digital.com
 #   (el ingress va en ~/.cloudflared/config.yml)
 #
