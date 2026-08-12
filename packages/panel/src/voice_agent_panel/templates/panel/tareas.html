@@ -38,4 +38,36 @@
   <button class="principal" type="submit" form="seleccion-tareas">Guardar selección</button>
 </div>
 {% endif %}
+
+<h2 style="margin-top:2rem">Llamadas que el agente ha agendado</h2>
+<p class="pie">Estas no las creas tú: las apunta el propio agente cuando alguien
+  le pide que le llame en otro momento, y también nacen solas como reintento de
+  una llamada de arriba que no cuajó. Suenan una vez y se acabó. El botón dice
+  <em>Cancelar</em> y no <em>Borrar</em> porque este fichero lo escribe el
+  agente, no el panel: aquí solo se deja la petición, y él la recoge en menos de
+  un minuto — salvo que esté en mitad de una llamada, que entonces espera a
+  terminarla.</p>
+
+{# Igual que arriba: los formularios, fuera de la tabla. #}
+{% for m in misiones %}
+<form method="post" action="{% url 'mision_cancelar' %}" id="cancelar-mision-{{ forloop.counter }}">
+  {% csrf_token %}<input type="hidden" name="id_mision" value="{{ m.id }}">
+</form>
+{% endfor %}
+
+<table style="margin-top:1rem">
+  <tr><th>Cuándo</th><th>A quién</th><th>Encargo</th><th>Origen</th><th></th></tr>
+  {% for m in misiones %}
+  <tr>
+    <td>{{ m.cuando|date:"D d/m H:i" }}</td>
+    <td>{{ m.contacto_nombre|default:m.contacto_numero }}</td>
+    <td>{{ m.mision|truncatechars:120 }}</td>
+    <td>{% if m.origen == "reintento" %}<span class="ayuda">reintento {{ m.intento }}
+      de {{ m.id_tarea_origen }}</span>{% else %}<span class="ayuda">pedida por voz</span>{% endif %}</td>
+    <td><button class="peligro" type="submit" form="cancelar-mision-{{ forloop.counter }}">Cancelar</button></td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="5" class="ayuda">Ninguna pendiente.</td></tr>
+  {% endfor %}
+</table>
 {% endblock %}

@@ -17,6 +17,22 @@ vigila el mtime de `tareas.json` en cada vuelta —el mismo argumento por el que
 el índice RAG ya se recoge en caliente— y el panel puede guardar una tarea sin
 reiniciar a nadie.
 
+## Dos calendarios, un solo ejecutor
+
+Además de las tareas del panel —cron, recurrentes, `tareas.json`— el
+planificador lleva las **misiones puntuales** que el agente se agenda a sí
+mismo hablando, o que nacen de un reintento (`misiones_agente.py`). Suenan una
+vez y se acabó. Todo lo que va de marcar en adelante es común a las dos: por
+eso `_ejecutar_llamada` y compañía trabajan contra `EncargoLlamada` y no contra
+`TareaProgramada`.
+
+La asimetría que importa: `tareas.json` lo escribe el panel y aquí se recarga
+por mtime; `misiones_agente.json` lo escribe el agente, y aquí **no se relee
+nunca** — se le pregunta al `AlmacenMisiones` compartido, que es el mismo
+objeto que usan las herramientas. Dos copias de la misma verdad en el mismo
+proceso sería una carrera garantizada. El mtime solo gobierna lo que llega de
+fuera, y de ahí también el fichero de cancelaciones, que va panel -> agente.
+
 ## Disparos perdidos: se pierden
 
 Si el agente estaba apagado a la hora de una tarea, esa ejecución no se
@@ -24,6 +40,16 @@ recupera al arrancar: `siguiente()` es estrictamente futuro y aquí no hay
 estado persistente de "última ejecución". Es deliberado (decisión del usuario):
 una misión vieja sonando a deshoras es peor que una misión perdida. La única
 huella es la bitácora, que registra lo que sí corrió.
+
+Para las puntuales rige lo mismo y sin ventana de gracia, pero el mecanismo es
+otro: de las que vencieron con el agente apagado se encarga
+`AlmacenMisiones.caducar_vencidas()` al arrancar, y de las que vencen mientras
+el planificador está ocupado, `_disparar_puntuales`. Ojo a esto último, que es
+un límite real: **una llamada en curso bloquea el tick entero**, porque
+`_ejecutar_llamada` sondea hasta que la llamada muere. Un "llámame en cinco
+minutos" dicho en mitad de una llamada de ocho vence sin que nadie lo mire y se
+anota `caducada`. La antelación mínima de `tools/misiones.py` evita el caso
+trivial; el resto queda en la bitácora, que es donde se ve.
 
 ## Una misión cada vez, y la sala manda
 
@@ -42,7 +68,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -51,7 +77,12 @@ from pipecat.frames.frames import LLMMessagesAppendFrame
 
 from voice_agent.telefonia import ClienteTelefonia, ErrorTelefonia
 from voice_agent_core.cron import ErrorDeCron
-from voice_agent_core.rutas import ruta_bitacora_tareas, ruta_tareas
+from voice_agent_core.misiones import EncargoLlamada, EstadoMision, cargar_cancelaciones
+from voice_agent_core.rutas import (
+    ruta_bitacora_tareas,
+    ruta_misiones_canceladas,
+    ruta_tareas,
+)
 from voice_agent_core.tareas import TareaProgramada, TareasConfig, TipoTarea, cargar_tareas
 from voice_agent_core.telefonia import EstadoLlamada
 
@@ -59,6 +90,7 @@ if TYPE_CHECKING:
     from pipecat.pipeline.worker import PipelineWorker
 
     from voice_agent.audio_gate import MicrophoneGate
+    from voice_agent.misiones_agente import AlmacenMisiones
     from voice_agent_core.config import Settings
 
 #: Cada cuánto mira el reloj y el mtime de `tareas.json`. Medio minuto da una
@@ -67,6 +99,17 @@ INTERVALO_TICK_SECS = 30.0
 
 #: Cuánto se aplaza una misión de sala si no hay sala o hay llamada en curso.
 ESPERA_OCUPADO_MAX_SECS = 600.0
+
+#: Hasta cuánto retraso se le tolera a una misión puntual antes de darla por
+#: perdida. **No es una ventana de gracia**: es la resolución del propio tick.
+#: Cuando el planificador ve una misión vencida siempre lo hace con algo de
+#: retraso —mira el reloj cada `INTERVALO_TICK_SECS` y la vuelta en sí tarda
+#: algo—, así que sin este margen no sonaría ninguna jamás. Se deja en dos
+#: ticks para absorber una vuelta lenta. Un retraso mayor significa que nadie
+#: estuvo mirando —el agente apagado, o el tick bloqueado por una llamada
+#: larga— y entonces la misión se anota `caducada` y no suena: la regla de que
+#: los disparos perdidos se pierden vale igual para las puntuales.
+MARGEN_TICK_SECS = INTERVALO_TICK_SECS * 2
 
 #: Si nadie contesta la llamada saliente en este plazo, se cuelga y se anota.
 TIMEOUT_SALIENTE_SECS = 60.0
@@ -114,9 +157,13 @@ class SalaActual:
 
 @dataclass
 class MisionPendiente:
-    """Una llamada saliente marcada por una tarea, esperando su audio SCO."""
+    """Una llamada saliente ya marcada, esperando su audio SCO.
 
-    tarea: TareaProgramada
+    El encargo puede ser una tarea del panel o una misión puntual del agente:
+    a partir de aquí da igual, y por eso está tipado al Protocol.
+    """
+
+    encargo: EncargoLlamada
     id_llamada: str
     creada_en: float = field(default_factory=time.monotonic)
     consumida: bool = False
@@ -135,15 +182,19 @@ class MisionesLlamada:
     de veinte minutos—, así que la correlación se hace aquí: el callback del
     SCO pregunta si hay una misión cuya llamada esté `EN_CURSO` ahora mismo.
     Una entrante que se cruce no se la lleva: su id no casa con el registrado.
+
+    **Hay un único hueco pendiente**, y hoy basta porque el planificador
+    ejecuta las misiones en serie: mientras vigila una llamada no marca otra.
+    Si algún día se paralelizan, esto es lo primero que rompe.
     """
 
     def __init__(self) -> None:
         """Arranca sin misión pendiente."""
         self._pendiente: MisionPendiente | None = None
 
-    def registrar(self, tarea: TareaProgramada, id_llamada: str) -> MisionPendiente:
+    def registrar(self, encargo: EncargoLlamada, id_llamada: str) -> MisionPendiente:
         """Deja constancia de que la próxima llamada `id_llamada` es una misión."""
-        self._pendiente = MisionPendiente(tarea=tarea, id_llamada=id_llamada)
+        self._pendiente = MisionPendiente(encargo=encargo, id_llamada=id_llamada)
         return self._pendiente
 
     def descartar(self) -> None:
@@ -181,13 +232,15 @@ class MisionesLlamada:
             llamada = next((c for c in estado.llamadas if c.id == pendiente.id_llamada), None)
             if llamada is None:
                 logger.info(
-                    f"[tareas] la llamada de '{pendiente.tarea.id}' ya no existe; "
+                    f"[tareas] la llamada de '{pendiente.encargo.id}' ya no existe; "
                     "este audio no es de la misión"
                 )
                 return None
             if llamada.estado is EstadoLlamada.EN_CURSO:
                 pendiente.consumida = True
-                logger.info(f"[tareas] la llamada {llamada.id} es la misión '{pendiente.tarea.id}'")
+                logger.info(
+                    f"[tareas] la llamada {llamada.id} es la misión '{pendiente.encargo.id}'"
+                )
                 return pendiente
             if any(
                 c.id != pendiente.id_llamada and c.estado is EstadoLlamada.EN_CURSO
@@ -195,11 +248,11 @@ class MisionesLlamada:
             ):
                 logger.info(
                     f"[tareas] hay otra llamada en curso; el audio no es de "
-                    f"'{pendiente.tarea.id}', que sigue {llamada.estado}"
+                    f"'{pendiente.encargo.id}', que sigue {llamada.estado}"
                 )
                 return None
             await asyncio.sleep(SONDEO_CONFIRMACION_SECS)
-        logger.info(f"[tareas] la misión '{pendiente.tarea.id}' caducó sin confirmar EN_CURSO")
+        logger.info(f"[tareas] la misión '{pendiente.encargo.id}' caducó sin confirmar EN_CURSO")
         self._pendiente = None
         return None
 
@@ -222,20 +275,31 @@ def instruccion_mision_sala(tarea: TareaProgramada) -> str:
     return texto
 
 
-def instruccion_mision_llamada(tarea: TareaProgramada) -> str:
-    """Redacta el añadido al prompt del pipeline de una llamada de misión."""
-    quien = tarea.contacto_nombre or tarea.contacto_numero
+def instruccion_mision_llamada(encargo: EncargoLlamada) -> str:
+    """Redacta el añadido al prompt del pipeline de una llamada de misión.
+
+    El id que se le dicta al modelo es `id_resultados` y no `id`: si esto es el
+    reintento de una tarea del panel, las respuestas tienen que caer en la
+    carpeta de la tarea original, que es la que mira su página de Resultados.
+    """
+    quien = encargo.contacto_nombre or encargo.contacto_numero
     texto = (
         f"\n\nEsta llamada la has hecho TÚ: acabas de llamar a {quien} en nombre "
         "del equipo de seguimiento postoperatorio. Preséntate y explica "
-        f"enseguida por qué llamas. Tu encargo (id de tarea: {tarea.id}): {tarea.mision}\n"
+        f"enseguida por qué llamas. Tu encargo (id de tarea: {encargo.id_resultados}): "
+        f"{encargo.mision}\n"
         "Sé breve, es una llamada. Cuando el encargo esté cumplido, despídete "
         "con claridad."
     )
-    if tarea.guardar_respuestas:
+    if encargo.intento:
+        texto += (
+            f" Ya intentaste esta llamada {encargo.intento} vez/veces sin conseguir "
+            "hablar con la persona, así que no des por hecho que sabe de qué va."
+        )
+    if encargo.guardar_respuestas:
         texto += (
             " Es un cuestionario: antes de despedirte, guarda las respuestas con "
-            f"la herramienta guardar_respuestas usando id_tarea='{tarea.id}'."
+            f"la herramienta guardar_respuestas usando id_tarea='{encargo.id_resultados}'."
         )
     return texto
 
@@ -251,6 +315,7 @@ class ProgramadorTareas:
         misiones: MisionesLlamada,
         *,
         ahora: Callable[[], datetime] = datetime.now,
+        almacen: AlmacenMisiones | None = None,
     ) -> None:
         """Prepara el planificador; no lee nada hasta la primera vuelta.
 
@@ -260,18 +325,24 @@ class ProgramadorTareas:
             telefonia: Cliente del puente, o `None` si este agente no tiene.
             misiones: Registro compartido con el callback del SCO.
             ahora: El reloj, inyectable en los tests.
+            almacen: La agenda de misiones puntuales, o `None` si este agente
+                no la tiene. Es el MISMO objeto que reciben las herramientas
+                por `AppResources`: sin eso, una llamada programada a mitad de
+                una conversación no entraría en el calendario hasta reiniciar.
         """
         self._settings = settings
         self._sala = sala
         self._telefonia = telefonia
         self._misiones = misiones
         self._ahora = ahora
+        self._almacen = almacen
         self._config = TareasConfig()
         self._mtime: float | None = None
+        self._mtime_cancelaciones: float | None = None
         self._proximas: dict[str, datetime] = {}
 
     async def correr(self) -> None:
-        """Vigila el fichero y el reloj para siempre. Nunca deja escapar nada.
+        """Vigila los ficheros y el reloj para siempre. Nunca deja escapar nada.
 
         El mismo contrato que `escuchar_telefonia`: un fallo aquí no puede
         tumbar el agente, así que todo lo que no sea la cancelación se anota y
@@ -280,7 +351,9 @@ class ProgramadorTareas:
         while True:
             try:
                 self._recargar_si_cambio()
+                await self._aplicar_cancelaciones_si_cambio()
                 await self._disparar_vencidas()
+                await self._disparar_puntuales()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -334,6 +407,59 @@ class ProgramadorTareas:
                 await self._ejecutar(tarea, programada)
             self._proximas[tarea.id] = tarea.expresion.siguiente(self._ahora())
 
+    # --- Misiones puntuales ---------------------------------------------------
+
+    async def _aplicar_cancelaciones_si_cambio(self) -> None:
+        """Recoge lo que el panel dejó apuntado en `misiones_canceladas.json`.
+
+        Por mtime, como `tareas.json`: este sí es un fichero que escribe el
+        panel. El del agente no se relee nunca (ver el docstring del módulo).
+        """
+        if self._almacen is None:
+            return
+        ruta = ruta_misiones_canceladas(self._settings.data_dir)
+        try:
+            mtime = ruta.stat().st_mtime
+        except OSError:
+            mtime = None  # sin fichero: nada que cancelar
+        if mtime == self._mtime_cancelaciones:
+            return
+
+        self._mtime_cancelaciones = mtime
+        ids = cargar_cancelaciones(self._settings.data_dir).ids
+        for mision in await self._almacen.aplicar_cancelaciones(ids):
+            self._anotar(mision, mision.cuando, "cancelada", "cancelada desde el panel")
+
+    async def _disparar_puntuales(self) -> None:
+        """Ejecuta las misiones puntuales que vencieron, y caduca las perdidas.
+
+        Se marcan **antes** de llamar: `_ejecutar_llamada` bloquea la vuelta
+        hasta que la llamada muere, y dejarla pendiente mientras tanto la haría
+        disparar dos veces si algo saliera mal por el camino.
+        """
+        if self._almacen is None:
+            return
+        for mision in self._almacen.pendientes():
+            ahora = self._ahora()
+            if ahora < mision.cuando:
+                break  # vienen ordenadas: la primera futura corta el barrido
+            retraso = (ahora - mision.cuando).total_seconds()
+            if retraso > MARGEN_TICK_SECS:
+                await self._almacen.marcar(mision.id, EstadoMision.CADUCADA)
+                self._anotar(
+                    mision,
+                    mision.cuando,
+                    "caducada",
+                    f"su hora pasó hace {int(retraso // 60)} min sin que nadie la mirara",
+                )
+                continue
+            if self._telefonia is None:
+                await self._almacen.marcar(mision.id, EstadoMision.CADUCADA)
+                self._anotar(mision, mision.cuando, "error", "este agente no tiene puente")
+                continue
+            await self._almacen.marcar(mision.id, EstadoMision.EJECUTADA)
+            await self._ejecutar_llamada(mision, mision.cuando)
+
     def _sala_disponible(self) -> bool:
         return self._sala.worker is not None and not self._sala.ocupada
 
@@ -370,23 +496,28 @@ class ProgramadorTareas:
 
     # --- Misiones de llamada -------------------------------------------------
 
-    async def _ejecutar_llamada(self, tarea: TareaProgramada, programada: datetime) -> None:
+    async def _ejecutar_llamada(self, encargo: EncargoLlamada, programada: datetime) -> None:
         """Marca el número congelado y vigila la llamada hasta su final.
 
         La conversación en sí no pasa por aquí: cuando el otro lado descuelga,
         oFono abre el SCO, el puente lo entrega, y `atender_llamada` recoge la
         misión vía `MisionesLlamada`. Este método solo marca, espera y anota.
+
+        Sirve igual a una tarea del panel que a una misión puntual: de ahí que
+        reciba un `EncargoLlamada`. Y **bloquea la vuelta del planificador
+        mientras dura la llamada**, que es lo que hace que las misiones se
+        ejecuten en serie y que `MisionesLlamada` pueda tener un solo hueco.
         """
         if self._telefonia is None:
-            self._anotar(tarea, programada, "error", "este agente no tiene puente de telefonía")
+            await self._cerrar(encargo, programada, "error", "este agente no tiene puente")
             return
         try:
-            llamada = await self._telefonia.marcar(tarea.contacto_numero)
+            llamada = await self._telefonia.marcar(encargo.contacto_numero)
         except ErrorTelefonia as e:
-            self._anotar(tarea, programada, "error", f"no se pudo marcar: {e}")
+            await self._cerrar(encargo, programada, "error", f"no se pudo marcar: {e}")
             return
 
-        pendiente = self._misiones.registrar(tarea, llamada.id)
+        pendiente = self._misiones.registrar(encargo, llamada.id)
         inicio = time.monotonic()
         try:
             while True:
@@ -394,7 +525,9 @@ class ProgramadorTareas:
                 try:
                     estado = await self._telefonia.estado()
                 except ErrorTelefonia as e:
-                    self._anotar(tarea, programada, "error", f"puente caído en plena llamada: {e}")
+                    await self._cerrar(
+                        encargo, programada, "error", f"puente caído en plena llamada: {e}"
+                    )
                     return
                 actual = next((c for c in estado.llamadas if c.id == llamada.id), None)
                 if actual is None:
@@ -402,17 +535,19 @@ class ProgramadorTareas:
                     # llegó a descolgar.
                     if pendiente.consumida:
                         duracion = int(time.monotonic() - inicio)
-                        self._anotar(
-                            tarea, programada, "llamada_contestada", f"duró {duracion} segundos"
+                        await self._cerrar(
+                            encargo, programada, "llamada_contestada", f"duró {duracion} segundos"
                         )
                     else:
-                        self._anotar(tarea, programada, "sin_respuesta", "la llamada no cuajó")
+                        await self._cerrar(
+                            encargo, programada, "sin_respuesta", "la llamada no cuajó"
+                        )
                     return
                 if not pendiente.consumida and time.monotonic() - inicio > TIMEOUT_SALIENTE_SECS:
                     with contextlib.suppress(ErrorTelefonia):
                         await self._telefonia.colgar(llamada.id)
-                    self._anotar(
-                        tarea,
+                    await self._cerrar(
+                        encargo,
                         programada,
                         "sin_respuesta",
                         f"nadie contestó en {TIMEOUT_SALIENTE_SECS:.0f} segundos",
@@ -421,24 +556,64 @@ class ProgramadorTareas:
         finally:
             self._misiones.descartar()
 
+    async def _cerrar(
+        self, encargo: EncargoLlamada, programada: datetime, resultado: str, detalle: str = ""
+    ) -> None:
+        """Anota el desenlace de una llamada y, si no cuajó, reprograma.
+
+        Punto único de salida de `_ejecutar_llamada`, que tiene cinco caminos
+        de vuelta: sembrar el reintento en cada uno era pedir que se olvidara
+        alguno.
+
+        Solo reintentan `sin_respuesta` y `error`. Si contestaron y la
+        conversación quedó a medias no se vuelve a llamar: eso es insistirle a
+        alguien que ya cogió el teléfono. Y sin puente tampoco: reintentar
+        contra un puente caído no lo levanta.
+        """
+        self._anotar(encargo, programada, resultado, detalle)
+        if resultado not in ("sin_respuesta", "error"):
+            return
+        if self._almacen is None or self._telefonia is None:
+            return
+        if encargo.intento + 1 >= self._settings.tareas_reintentos_max:
+            logger.info(
+                f"[tareas] '{encargo.id}' agotó sus "
+                f"{self._settings.tareas_reintentos_max} intentos; no se reprograma"
+            )
+            return
+        cuando = self._ahora() + timedelta(minutes=self._settings.tareas_reintento_espera_min)
+        try:
+            await self._almacen.programar_reintento(encargo, cuando, ahora=self._ahora())
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.error(f"[tareas] no se pudo programar el reintento de '{encargo.id}': {e}")
+
     # --- Bitácora -------------------------------------------------------------
 
     def _anotar(
-        self, tarea: TareaProgramada, programada: datetime, resultado: str, detalle: str = ""
+        self, encargo: EncargoLlamada, programada: datetime, resultado: str, detalle: str = ""
     ) -> None:
         """Deja una línea JSON en la bitácora; el panel la enseña tal cual.
 
         Nunca lanza: la bitácora es informativa y un disco lleno no puede
         parar el planificador.
+
+        Se anota bajo `id_resultados` y no bajo `id`: la página de Resultados
+        del panel filtra la bitácora por el nombre de la tarea, así que un
+        reintento apuntado con su id propio no se vería justo cuando más
+        interesa. El id real va aparte, y solo cuando difiere.
         """
-        logger.info(f"[tareas] '{tarea.id}': {resultado}{f' ({detalle})' if detalle else ''}")
-        entrada = {
-            "id_tarea": tarea.id,
+        logger.info(f"[tareas] '{encargo.id}': {resultado}{f' ({detalle})' if detalle else ''}")
+        entrada: dict[str, object] = {
+            "id_tarea": encargo.id_resultados,
             "programada": programada.isoformat(timespec="seconds"),
             "ejecutada": self._ahora().isoformat(timespec="seconds"),
             "resultado": resultado,
             "detalle": detalle,
         }
+        if encargo.id != encargo.id_resultados:
+            entrada["id_mision"] = encargo.id
+        if encargo.intento:
+            entrada["intento"] = encargo.intento
         ruta: Path = ruta_bitacora_tareas(self._settings.data_dir)
         try:
             ruta.parent.mkdir(parents=True, exist_ok=True)
@@ -452,6 +627,7 @@ __all__ = [
     "CADUCIDAD_MISION_SECS",
     "ESPERA_OCUPADO_MAX_SECS",
     "INTERVALO_TICK_SECS",
+    "MARGEN_TICK_SECS",
     "TIMEOUT_SALIENTE_SECS",
     "MisionPendiente",
     "MisionesLlamada",

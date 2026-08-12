@@ -54,6 +54,9 @@ urlpatterns = [
     path("panel/tareas/<int:pk>/", views.tarea_editar, name="tarea_editar"),
     path("panel/tareas/<int:pk>/borrar/", views.tarea_borrar, name="tarea_borrar"),
     path("panel/tareas/<int:pk>/resultados/", views.tarea_resultados, name="tarea_resultados"),
+    # Sin id en la ruta: el de una misión lo inventa el agente y puede acabar
+    # siendo carpeta, así que viaja en el cuerpo del POST como los del corpus.
+    path("panel/misiones/cancelar/", views.mision_cancelar, name="mision_cancelar"),
     path("panel/evaluaciones/", views.evaluaciones, name="evaluaciones"),
     path("panel/pacientes/", views.pacientes, name="pacientes"),
     path("panel/calidad/", views.calidad, name="calidad"),

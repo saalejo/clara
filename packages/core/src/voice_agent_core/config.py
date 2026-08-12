@@ -755,6 +755,32 @@ class Settings(BaseSettings):
         ),
     )
 
+    # --- Tareas programadas -------------------------------------------------
+    tareas_reintentos_max: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        description=(
+            "Cuántas veces se marca EN TOTAL una misión de llamada que no cuaja. "
+            "Con 2, si nadie contesta se vuelve a intentar una vez. El reintento es "
+            "una misión puntual del agente: aparece en la lista de abajo de esta "
+            "misma página y se puede cancelar desde ahí. Solo reintentan las que "
+            "acaban en 'sin respuesta' o 'error'; si contestaron y la conversación "
+            "quedó a medias no se vuelve a llamar, que eso es insistirle a alguien "
+            "que ya cogió el teléfono."
+        ),
+    )
+    tareas_reintento_espera_min: int = Field(
+        default=30,
+        ge=1,
+        le=1440,
+        description=(
+            "Minutos entre un intento fallido y el siguiente. Treinta da margen a "
+            "que la persona salga de donde estuviera sin convertir la placa en un "
+            "marcador insistente."
+        ),
+    )
+
     # --- Varios ------------------------------------------------------------
     log_level: str = Field(default="INFO")
     timezone: str = Field(default="America/Bogota")

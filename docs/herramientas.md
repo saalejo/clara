@@ -37,6 +37,32 @@ Viven en una lista aparte, `HERRAMIENTAS_TELEFONIA`, y **no** en `HERRAMIENTAS`.
 Es deliberado: sin puente, el catálogo que ve el modelo es exactamente el de
 siempre, y los tests que fijan ese catálogo no han tenido que cambiar.
 
+## Y cuatro más: la agenda del agente
+
+Con estas, el agente puede prometer una llamada y cumplirla. Son la respuesta a
+dos situaciones que dejaban una llamada de seguimiento a medias: que la persona
+no pueda hablar ahora ("estoy en el trabajo, llámame mañana a las cinco"), y que
+no conteste nadie —de esto último se encarga solo el planificador, con los
+reintentos. Ver [`tareas.md`](tareas.md).
+
+| Nombre | Qué hace | Por qué existe |
+|---|---|---|
+| `programar_llamada` | Agenda una llamada para un momento concreto | Sin esto, el agente oye la petición y la promesa se pierde |
+| `editar_llamada_programada` | Mueve la hora o cambia el encargo | "Mejor el jueves" no debería obligar a cancelar y volver a crear |
+| `cancelar_llamada_programada` | Retira una llamada pendiente | "Ya no hace falta que me llames" |
+| `llamadas_programadas` | Lista las pendientes | Sin ella el modelo no conoce los identificadores de las otras tres |
+
+Van en su propia lista, `HERRAMIENTAS_AGENDA`, y con **bandera propia**
+(`incluir_agenda`), no con la de telefonía. No es duplicación: dentro de una
+llamada las de teléfono se montan a `False` a propósito, y programar una llamada
+para más tarde es justo lo que hace falta poder hacer ahí.
+
+Se encienden en la sala y en el pipeline de la llamada. **En el del navegador y
+en el arnés de calidad, no**, y ahí `incluir_agenda=False` está escrito a mano
+aunque sea el valor por defecto: quien entra por el enlace de la interfaz de
+llamada es un desconocido, y agendar es marcar un número arbitrario desde la
+placa. Ver [`seguridad.md`](seguridad.md).
+
 ## Cómo se declaran: *direct functions*
 
 Pipecat 1.x deduce el esquema JSON que se le manda al modelo a partir de la
@@ -194,6 +220,33 @@ Y una regla de forma que ya se aplicaba pero aquí es crítica: **ninguna
 herramienta deja escapar una excepción**. Un fallo es un dato que el modelo tiene
 que poder contarle a la persona (`{"error": ..., "sugerencia": ...}`), no algo
 que rompa el turno.
+
+### El caso raro: acciones diferidas
+
+Las de agenda también actúan sobre el mundo, pero **más tarde**, y eso cambia
+las reglas en las dos direcciones.
+
+A favor: **no llevan pestillo `confirmado`**. Programar no despierta a nadie, y
+si sale mal se deshace con `cancelar_llamada_programada`; obligar a una segunda
+pasada por algo reversible es fricción sin contrapartida.
+
+En contra: cuando el error se note, ya no habrá nadie delante para corregirlo.
+Por eso la validación de la fecha es dura y está en la herramienta, no en el
+prompt:
+
+- **Nada de fechas relativas.** El docstring prohíbe explícitamente escribir
+  "mañana" o "en dos horas" y remite a `obtener_fecha_hora`, que usa la misma
+  zona (`Settings.timezone`) con la que después se interpreta lo que escriba.
+- **Antelación mínima de dos minutos**, que de paso cubre el pasado. El
+  planificador mira el reloj cada treinta segundos y durante una llamada no mira
+  nada: algo agendado para "dentro de un instante" nacería ya vencido.
+- **Horizonte de un año.** Un modelo que se equivoca de año dejaría si no una
+  llamada latente durante un lustro.
+- **El resultado vuelve redactado en español** ("jueves 13 de agosto a las
+  17:00") junto con un aviso de no leer el identificador en voz alta. Lo primero
+  es para que el agente lo diga y la persona pueda desmentirlo — que es la
+  confirmación que aquí sustituye al pestillo. Lo segundo, porque
+  `agenda-20260813-1700-a3f9` dicho por Piper es horrible.
 
 ## Añadir una herramienta nueva
 

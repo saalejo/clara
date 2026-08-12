@@ -102,7 +102,7 @@ class TestElPrompt:
     def test_una_mision_ignora_la_identidad_de_agenda(self) -> None:
         from voice_agent_core.telefonia import EstadoLlamada, Llamada
 
-        mision = MisionPendiente(tarea=tarea_llamada(), id_llamada="voicecall01")
+        mision = MisionPendiente(encargo=tarea_llamada(), id_llamada="voicecall01")
         llamada = Llamada(
             id="voicecall01",
             estado=EstadoLlamada.EN_CURSO,
@@ -114,7 +114,7 @@ class TestElPrompt:
         assert "Otro Nombre" not in texto  # la tarea ya trae el contacto
 
     def test_una_mision_sustituye_el_guion_de_entrante(self) -> None:
-        mision = MisionPendiente(tarea=tarea_llamada(), id_llamada="voicecall01")
+        mision = MisionPendiente(encargo=tarea_llamada(), id_llamada="voicecall01")
         texto = _prompt_de_llamada(RuntimeConfig(), mision)
         assert "Estás atendiendo una llamada" not in texto  # el guion de entrante
         assert "acabas de llamar a Abuela" in texto
@@ -123,7 +123,7 @@ class TestElPrompt:
 
     def test_un_cuestionario_pide_guardar(self) -> None:
         mision = MisionPendiente(
-            tarea=tarea_llamada(guardar_respuestas=True), id_llamada="voicecall01"
+            encargo=tarea_llamada(guardar_respuestas=True), id_llamada="voicecall01"
         )
         texto = _prompt_de_llamada(RuntimeConfig(), mision)
         assert "id_tarea='revision-abuela'" in texto
@@ -136,7 +136,7 @@ class TestLaCorrelacion:
         cliente = ClienteFalso(estados=[[llamada()]])
 
         mision = await misiones.tomar_si_en_curso(cast(Any, cliente))
-        assert mision is not None and mision.tarea.id == "revision-abuela"
+        assert mision is not None and mision.encargo.id == "revision-abuela"
         # Consumida una vez, no se entrega dos veces.
         assert await misiones.tomar_si_en_curso(cast(Any, cliente)) is None
 
@@ -151,7 +151,7 @@ class TestLaCorrelacion:
             estados=[[llamada(estado=EstadoLlamada.SONANDO)]] * 20 + [[llamada()]]
         )
         mision = await misiones.tomar_si_en_curso(cast(Any, cliente))
-        assert mision is not None and mision.tarea.id == "revision-abuela"
+        assert mision is not None and mision.encargo.id == "revision-abuela"
 
     async def test_si_la_llamada_desaparece_se_rinde(self) -> None:
         # Rechazada mientras sonaba: la llamada se esfuma y el audio que

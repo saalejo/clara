@@ -148,7 +148,7 @@ class TestElPromptConFicha:
             mision="Pregunta cómo sigue.",
             contacto_numero=NUMERO,
         )
-        mision = MisionPendiente(tarea=tarea, id_llamada="voicecall01")
+        mision = MisionPendiente(encargo=tarea, id_llamada="voicecall01")
         texto = _prompt_de_llamada(RuntimeConfig(), mision, None, self._ficha(tmp_path))
         assert "Historial de este número" in texto
         assert "Llamar si hay fiebre" in texto

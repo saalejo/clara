@@ -72,6 +72,7 @@ from voice_agent.bot import _preparar_telefonia
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
 from voice_agent.metrica import MetricsRecorder, anotar_evento
+from voice_agent.misiones_agente import AlmacenMisiones
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
 from voice_agent.respaldo import resumen_de_respaldo
@@ -338,7 +339,17 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
             # Sin recursos (índice ausente) no se ofrece ninguna herramienta:
             # anunciar una herramienta que no puede funcionar hace que el
             # modelo diga que la ha consultado (ver docs/herramientas.md).
-            tools=herramientas_activas(runtime.herramientas_desactivadas, incluir_telefonia=False)
+            #
+            # `incluir_agenda=False` está escrito a mano aunque sea el valor
+            # por defecto, porque aquí NO es un descuido: este pipeline es el
+            # de un desconocido con un enlace, y programar llamadas es marcar
+            # números arbitrarios desde la placa, en diferido. Ver
+            # `docs/seguridad.md` antes de encenderlo.
+            tools=herramientas_activas(
+                runtime.herramientas_desactivadas,
+                incluir_telefonia=False,
+                incluir_agenda=False,
+            )
             if recursos is not None
             else NOT_GIVEN,
         )
@@ -511,8 +522,19 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             # telefónico la recibe: una conexión de navegador no tiene número
             # con el que abrir una ficha.
             historial = HistorialPacientes(ruta_historial(config.data_dir))
+            # La agenda de misiones puntuales, compartida por el planificador y
+            # el pipeline de la llamada. Al pipeline del NAVEGADOR no llega a
+            # propósito: quien tiene el enlace no debe poder agendar llamadas
+            # salientes desde la placa (ver docs/seguridad.md).
+            almacen = AlmacenMisiones(config)
+            await almacen.cargar()
+            await almacen.caducar_vencidas()
             servicios_llamada = ServiciosDeLlamada(
-                config, runtime, retriever=retriever_compartido, historial=historial
+                config,
+                runtime,
+                retriever=retriever_compartido,
+                historial=historial,
+                almacen=almacen,
             )
             servicios_llamada.precargar()
 
@@ -533,7 +555,7 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             )
             audio_llamadas.arrancar()
             programador = asyncio.create_task(
-                ProgramadorTareas(config, sala, telefonia, misiones).correr()
+                ProgramadorTareas(config, sala, telefonia, misiones, almacen=almacen).correr()
             )
             logger.info("Telefonía activa: contestador clínico y llamadas de misión")
 

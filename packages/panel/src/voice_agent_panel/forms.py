@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from voice_agent_core import corpus
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
+from voice_agent_core.misiones import PREFIJO_AGENDA
 from voice_agent_core.runtime import (
     AccionHook,
     HookConfig,
@@ -445,6 +446,22 @@ class TareaForm(forms.ModelForm):
             "Se marca tal cual a la hora del disparo. Usa el buscador para "
             "copiarlo de la agenda del móvil, o tecléalo con prefijo."
         )
+
+    def clean_nombre(self) -> str:
+        """Impide invadir el espacio de nombres del agente.
+
+        El nombre de una tarea acaba siendo la carpeta de sus resultados, y las
+        misiones que el agente se inventa usan ese mismo espacio con el prefijo
+        `agenda-`. Una tarea llamada así podría acabar mezclando sus respuestas
+        con las de una misión, y al revés.
+        """
+        texto = self.cleaned_data["nombre"].strip()
+        if texto.startswith(f"{PREFIJO_AGENDA}-"):
+            raise forms.ValidationError(
+                f"'{PREFIJO_AGENDA}-' está reservado para las llamadas que agenda el "
+                "agente por su cuenta. Elige otro nombre."
+            )
+        return texto
 
     def clean_cron(self) -> str:
         """Valida la expresión y calcula la vista previa de disparos."""

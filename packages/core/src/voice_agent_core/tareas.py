@@ -100,6 +100,25 @@ class TareaProgramada(BaseModel):
         """La expresión ya interpretada; el validador garantiza que parsea."""
         return ExpresionCron.parse(self.cron)
 
+    @property
+    def id_resultados(self) -> str:
+        """Bajo qué id se guardan las respuestas y se anota la bitácora.
+
+        Una tarea del panel guarda bajo su propio id. Existe para cumplir
+        `misiones.EncargoLlamada`, donde una misión puntual puede querer
+        guardar bajo el de la tarea que la originó (ver `MisionPuntual`).
+        """
+        return self.id
+
+    @property
+    def intento(self) -> int:
+        """Una tarea del panel es siempre el primer intento.
+
+        Los reintentos no se guardan aquí: son misiones puntuales del agente,
+        y este fichero lo reescribe el panel entero en cada guardado.
+        """
+        return 0
+
 
 class TareasConfig(BaseModel):
     """El fichero `tareas.json` completo."""

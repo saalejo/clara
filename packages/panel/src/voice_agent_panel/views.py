@@ -39,6 +39,11 @@ from voice_agent_core.calidad import (
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
 from voice_agent_core.estado import leer_estado
 from voice_agent_core.historial import HistorialPacientes
+from voice_agent_core.misiones import (
+    CancelacionesMisiones,
+    cargar_cancelaciones,
+    cargar_misiones,
+)
 from voice_agent_core.runtime import EventoHook
 from voice_agent_core.rutas import (
     dir_alertas,
@@ -49,6 +54,7 @@ from voice_agent_core.rutas import (
     ruta_bitacora_tareas,
     ruta_historial,
     ruta_lote_calidad,
+    ruta_misiones_canceladas,
     ruta_solicitud_calidad,
 )
 from voice_agent_panel import agenda, control, tailer
@@ -712,7 +718,54 @@ def tareas(request: HttpRequest) -> HttpResponse:
         except ErrorDeCron:
             proxima = None  # guardada con una versión anterior del parser
         filas.append({"obj": tarea, "proxima": proxima})
-    return render(request, "panel/tareas.html", {"tareas": filas})
+    return render(
+        request,
+        "panel/tareas.html",
+        {"tareas": filas, "misiones": cargar_misiones(django_settings.DATA_DIR).pendientes},
+    )
+
+
+@require_POST
+def mision_cancelar(request: HttpRequest) -> HttpResponse:
+    """Pide al agente que retire una misión puntual suya.
+
+    Aquí no se borra nada. El dueño de `misiones_agente.json` es el agente
+    —doctrina de un fichero, un escritor: si el panel escribiera ahí, pisaría
+    lo que el agente acabara de apuntar en una conversación—, así que lo que se
+    escribe es la petición, en el fichero que el planificador consulta por
+    mtime en su siguiente vuelta.
+
+    El id va en el CUERPO del POST y no en la ruta, como en el resto del panel:
+    no es un entero de la base de datos, es un identificador que se inventó el
+    agente y que puede acabar siendo carpeta.
+
+    De paso se podan los ids que ya no correspondan a ninguna misión pendiente,
+    para que el fichero no crezca sin fin. Entre leer las misiones y escribir
+    esto el agente puede haber cambiado el suyo, pero da igual: **los ids no se
+    reutilizan jamás** —llevan marca de tiempo y cuatro caracteres al azar—, así
+    que una cancelación rezagada no puede acertarle a otra misión. No hace falta
+    ningún candado, y además no podría haberlo entre dos contenedores.
+    """
+    id_mision = request.POST.get("id_mision", "").strip()
+    vivas = {m.id for m in cargar_misiones(django_settings.DATA_DIR).pendientes}
+    previos = set(cargar_cancelaciones(django_settings.DATA_DIR).ids)
+    ids = sorted((previos & vivas) | ({id_mision} & vivas))
+    try:
+        escribir_json_atomico(
+            ruta_misiones_canceladas(django_settings.DATA_DIR),
+            CancelacionesMisiones(generado_en=datetime.now(), ids=ids).model_dump(mode="json"),
+        )
+    except OSError as e:
+        messages.error(request, f"No se pudo pedir la cancelación: {e}")
+        return redirect("tareas")
+
+    if id_mision in vivas:
+        messages.success(
+            request, "Pedida la cancelación. El agente la recoge en menos de un minuto."
+        )
+    else:
+        messages.warning(request, "Esa llamada ya no estaba pendiente; no hay nada que cancelar.")
+    return redirect("tareas")
 
 
 def tarea_editar(request: HttpRequest, pk: int | None = None) -> HttpResponse:

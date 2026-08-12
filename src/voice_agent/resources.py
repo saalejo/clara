@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from voice_agent.misiones_agente import AlmacenMisiones
 from voice_agent.rag.retriever import Retriever
 from voice_agent.telefonia import ClienteTelefonia
 from voice_agent.traza import TrazaLlamada
@@ -58,3 +59,8 @@ class AppResources:
     #: identificó; vacío en el navegador o con número oculto. Es lo que ata
     #: las anotaciones del historial a una ficha.
     numero_llamada: str = ""
+    #: La agenda de misiones puntuales, o `None` donde no la hay (el
+    #: navegador, el arnés de calidad, los tests). Es el MISMO objeto que usa
+    #: el planificador: por eso una llamada que se programa a mitad de una
+    #: conversación entra en el calendario sin que nadie relea ningún fichero.
+    almacen_misiones: AlmacenMisiones | None = None

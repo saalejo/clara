@@ -22,6 +22,7 @@ from voice_agent.tools.clock import obtener_fecha_hora
 from voice_agent.tools.evaluacion import finalizar_llamada, registrar_alerta
 from voice_agent.tools.historial import historial_paciente
 from voice_agent.tools.knowledge import buscar_en_documentos
+from voice_agent.tools.misiones import HERRAMIENTAS_AGENDA
 from voice_agent.tools.system import estado_del_sistema
 from voice_agent.tools.tareas import guardar_respuestas
 from voice_agent.tools.telefono import HERRAMIENTAS_TELEFONIA
@@ -44,6 +45,11 @@ HERRAMIENTAS: list[FunctionSchema | DirectFunction] = [
 # corriendo en la placa, así que se mezclan en `herramientas_activas` cuando
 # `bot.py` confirma que lo hay. El efecto secundario importante es que, sin
 # puente, el catálogo que ve el modelo es exactamente el de siempre.
+#
+# Las de agenda (`voice_agent.tools.misiones`) van igual, pero con su PROPIA
+# bandera y no con la de telefonía. No es una duplicación gratuita: dentro de
+# una llamada las de teléfono se montan a `False` a propósito, y programar una
+# llamada para más tarde es justo lo que hace falta poder hacer ahí.
 
 
 def nombre_de(herramienta: FunctionSchema | DirectFunction) -> str:
@@ -72,6 +78,7 @@ def herramientas_activas(
     desactivadas: Collection[str],
     *,
     incluir_telefonia: bool = False,
+    incluir_agenda: bool = False,
 ) -> list[FunctionSchema | DirectFunction]:
     """Filtra el registro dejando fuera las herramientas que el panel apagó.
 
@@ -89,6 +96,12 @@ def herramientas_activas(
             telefonía en marcha; `bot.py` lo decide sondeándolo al arrancar. El
             filtro del panel se aplica igual a las dos listas, así que una
             herramienta de teléfono se puede apagar como cualquier otra.
+        incluir_agenda: Añadir las herramientas de misiones programadas. Su
+            propia bandera, porque hacen falta **dentro** de una llamada, donde
+            `incluir_telefonia` va en `False`. Solo la encienden la sala y el
+            pipeline de la llamada: en el del navegador se queda apagada a
+            propósito, para que quien tenga el enlace no pueda agendar llamadas
+            salientes a números arbitrarios desde la placa (`docs/seguridad.md`).
 
     Returns:
         Las herramientas que se le ofrecerán al modelo.
@@ -96,6 +109,8 @@ def herramientas_activas(
     catalogo: list[FunctionSchema | DirectFunction] = list(HERRAMIENTAS)
     if incluir_telefonia:
         catalogo += HERRAMIENTAS_TELEFONIA
+    if incluir_agenda:
+        catalogo += HERRAMIENTAS_AGENDA
 
     if not desactivadas:
         return catalogo
@@ -114,6 +129,7 @@ def herramientas_activas(
 
 __all__ = [
     "HERRAMIENTAS",
+    "HERRAMIENTAS_AGENDA",
     "HERRAMIENTAS_TELEFONIA",
     "buscar_en_documentos",
     "esquema_de",

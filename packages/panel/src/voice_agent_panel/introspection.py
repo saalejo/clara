@@ -41,6 +41,7 @@ SECCIONES: list[tuple[str, tuple[str, ...]]] = [
     ("Muletillas", ("filler_",)),
     ("Base de conocimiento (RAG)", ("chroma_", "embedding_", "rag_", "chunk_")),
     ("Llamada por navegador", ("web_", "ice_", "turn_")),
+    ("Tareas programadas", ("tareas_",)),
 ]
 
 

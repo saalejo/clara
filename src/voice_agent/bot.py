@@ -60,6 +60,7 @@ from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.hooks import construir_procesadores
 from voice_agent.logging import log_startup_banner
 from voice_agent.mcp import ResultadoMCP, cerrar_clientes, iniciar_clientes
+from voice_agent.misiones_agente import AlmacenMisiones
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
 from voice_agent.services import (
@@ -139,7 +140,10 @@ async def _preparar_telefonia(settings: Settings) -> ClienteTelefonia | None:
 
 
 async def construir_worker(
-    settings: Settings, runtime: RuntimeConfig, telefonia: ClienteTelefonia | None
+    settings: Settings,
+    runtime: RuntimeConfig,
+    telefonia: ClienteTelefonia | None,
+    almacen: AlmacenMisiones | None = None,
 ) -> tuple[PipelineWorker, list[MCPClient], MicrophoneGate | None]:
     """Construye el pipeline completo listo para ejecutar.
 
@@ -157,6 +161,9 @@ async def construir_worker(
             su vida es más larga que la del pipeline: la sala puede montarse y
             desmontarse con cada conexión de la tarjeta de sonido, y el
             teléfono no tiene por qué enterarse.
+        almacen: La agenda de misiones puntuales, o `None` si este agente no
+            la tiene. Igual que la telefonía, se recibe hecha: la comparte con
+            el planificador, cuya vida es más larga que la de la sala.
 
     Returns:
         El `PipelineWorker`, los clientes MCP abiertos —que quien llame tiene
@@ -177,7 +184,12 @@ async def construir_worker(
     # Se construyen una sola vez, antes del pipeline: cargar el modelo de
     # embeddings y abrir el índice cuesta varios segundos y no puede pasar en
     # mitad de una conversación.
-    recursos = AppResources(settings=settings, retriever=Retriever(settings), telefonia=telefonia)
+    recursos = AppResources(
+        settings=settings,
+        retriever=Retriever(settings),
+        telefonia=telefonia,
+        almacen_misiones=almacen,
+    )
 
     # --- Servicios -----------------------------------------------------------
     # La compuerta se crea antes que el transporte porque va instalada dentro,
@@ -209,7 +221,12 @@ async def construir_worker(
     # dos campos separados para poder cambiar el carácter del agente sin tocar
     # sus reglas de funcionamiento.
     herramientas = herramientas_activas(
-        runtime.herramientas_desactivadas, incluir_telefonia=telefonia is not None
+        runtime.herramientas_desactivadas,
+        incluir_telefonia=telefonia is not None,
+        # Sin agenda no habría dónde escribir, y anunciar una herramienta que
+        # no puede funcionar es exactamente lo que hace que el modelo diga que
+        # la ha usado (ver `docs/herramientas.md`).
+        incluir_agenda=almacen is not None,
     )
 
     # Los servidores MCP se conectan aquí y no antes ni después: `register_tools`
@@ -382,6 +399,7 @@ async def _conversar_en_sala(
     telefonia: ClienteTelefonia | None,
     tarjetas: frozenset[str],
     sala: SalaActual | None = None,
+    almacen: AlmacenMisiones | None = None,
 ) -> bool:
     """Monta el pipeline de la sala y conversa hasta que termine o se vaya la tarjeta.
 
@@ -393,13 +411,15 @@ async def _conversar_en_sala(
         sala: El puente con el planificador de tareas: aquí se publica el
             worker mientras la sala está montada, para que las misiones de
             sala tengan dónde hablar. Opcional para no obligar a los tests.
+        almacen: La agenda de misiones puntuales, compartida con el
+            planificador. Opcional por el mismo motivo que `sala`.
 
     Returns:
         True si la sesión terminó porque la tarjeta cambió —y hay que volver a
         esperarla—, False si terminó por cualquier otra causa y toca salir.
     """
     try:
-        worker, clientes_mcp, gate = await construir_worker(settings, runtime, telefonia)
+        worker, clientes_mcp, gate = await construir_worker(settings, runtime, telefonia, almacen)
     except AudioDeviceError as e:
         # La tarjeta estaba al resolver y se fue antes de terminar el montaje.
         logger.warning(f"La tarjeta de sonido desapareció durante el montaje: {e}")
@@ -519,6 +539,15 @@ async def ejecutar(settings: Settings) -> None:
     sala = SalaActual()
     misiones = MisionesLlamada()
 
+    # La agenda de misiones puntuales, una sola para todo el proceso: la
+    # comparten el planificador y las herramientas de cualquier pipeline. Se
+    # caducan aquí las que vencieron con el agente apagado, ANTES de que el
+    # planificador dé su primera vuelta, que es donde se cumple la regla de que
+    # los disparos perdidos se pierden.
+    almacen = AlmacenMisiones(settings)
+    await almacen.cargar()
+    await almacen.caducar_vencidas()
+
     audio_llamadas: ClienteAudioSCO | None = None
     if telefonia is not None:
         # El audio de las llamadas (fase 2). El cliente reconecta solo, así
@@ -526,7 +555,7 @@ async def ejecutar(settings: Settings) -> None:
         # audio, simplemente no llega ninguna llamada que atender.
         # Los modelos del pipeline de llamada cargan AHORA, no al descolgar:
         # ver ServiciosDeLlamada.
-        servicios_llamada = ServiciosDeLlamada(settings, runtime)
+        servicios_llamada = ServiciosDeLlamada(settings, runtime, almacen=almacen)
         servicios_llamada.precargar()
 
         async def _al_llegar_audio(sock: socket.socket, metadatos: dict[str, Any]) -> None:
@@ -550,13 +579,13 @@ async def ejecutar(settings: Settings) -> None:
         audio_llamadas.arrancar()
 
     programador = asyncio.create_task(
-        ProgramadorTareas(settings, sala, telefonia, misiones).correr()
+        ProgramadorTareas(settings, sala, telefonia, misiones, almacen=almacen).correr()
     )
 
     try:
         while True:
             tarjetas = await esperar_dispositivos(settings)
-            if not await _conversar_en_sala(settings, runtime, telefonia, tarjetas, sala):
+            if not await _conversar_en_sala(settings, runtime, telefonia, tarjetas, sala, almacen):
                 break
     finally:
         programador.cancel()

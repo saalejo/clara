@@ -68,6 +68,76 @@ una llamada de madrugada porque la placa estuvo sin corriente— es peor que una
 ejecución perdida. El planificador calcula siempre el próximo disparo
 estrictamente en el futuro.
 
+La misma regla vale para las misiones puntuales de la sección siguiente, con
+un mecanismo distinto: al arrancar, `AlmacenMisiones.caducar_vencidas()` marca
+`caducada` todo lo que quedó atrás, y durante la marcha `_disparar_puntuales`
+hace lo propio con lo que se pasó de hora por más de dos ticks. Ese margen de
+dos ticks **no es una ventana de gracia**, es la resolución del propio
+planificador: mira el reloj cada treinta segundos, así que siempre ve las
+misiones con algo de retraso, y sin ese margen no sonaría ninguna jamás.
+
+Hay un caso que conviene conocer porque parece un fallo y no lo es: **una
+llamada en curso bloquea el tick entero**, porque el planificador se queda
+sondeándola hasta que muere. Si en mitad de una llamada de ocho minutos
+alguien pide "llámame en cinco", esa misión vence sin que nadie la mire y se
+anota `caducada`. La antelación mínima de dos minutos que exige
+`programar_llamada` evita el caso trivial; el resto se ve en la bitácora, no
+se pierde en silencio.
+
+## Misiones puntuales: las que se inventa el agente
+
+Además de las tareas de arriba, el planificador lleva un segundo calendario:
+**misiones puntuales**, con un momento absoluto en vez de un cron, que suenan
+una vez y se acabó. No las crea nadie desde el panel. Nacen de dos sitios:
+
+- **De una conversación.** El agente tiene cuatro herramientas de agenda
+  (`programar_llamada`, `editar_llamada_programada`,
+  `cancelar_llamada_programada` y `llamadas_programadas`), así que cuando el
+  paciente dice "ahora no puedo, llámame mañana a las cinco", la promesa queda
+  apuntada en vez de perderse. Dentro de una llamada, el número por defecto es
+  el de quien está al teléfono: el modelo no tiene que saberse ninguno.
+- **De un reintento**, que se explica más abajo.
+
+**El fichero lo escribe el agente, y solo él.** Vive en
+`data/config/misiones_agente.json` y es la otra mitad de la doctrina de
+`rutas.py`: `tareas.json` va panel → agente, y este va agente → panel. Por eso
+el panel las **lista pero no las edita**, y su botón dice *Cancelar* y no
+*Borrar*: lo que hace es dejar el id apuntado en un segundo fichero
+(`misiones_canceladas.json`, panel → agente) que el planificador consulta por
+mtime en su siguiente vuelta. Si el panel escribiera directamente en el fichero
+del agente, pisaría lo que este acabara de apuntar en mitad de una
+conversación.
+
+Los ids llevan el prefijo `agenda-` porque comparten con las tareas la carpeta
+de resultados; el formulario del panel rechaza los nombres que empiecen así,
+para cerrar la colisión por los dos lados.
+
+**Dónde NO están montadas estas herramientas**: en el pipeline del navegador ni
+en el arnés de calidad. Programar una llamada es marcar un número arbitrario
+desde la placa, aunque sea en diferido, y quien entra por el enlace de la
+interfaz de llamada es un desconocido. Ver `docs/seguridad.md`.
+
+## Reintentos
+
+Cuando una llamada de misión no cuaja, el planificador agenda otro intento él
+solo, como una misión puntual más. Dos ajustes lo gobiernan, ambos en la
+sección *Tareas programadas* del panel:
+
+| Ajuste | Por defecto | Qué hace |
+|---|---|---|
+| `TAREAS_REINTENTOS_MAX` | 2 | Veces que se marca **en total**. Con 2, si nadie contesta se intenta una vez más. |
+| `TAREAS_REINTENTO_ESPERA_MIN` | 30 | Minutos entre un intento y el siguiente. |
+
+Solo reintentan los desenlaces `sin_respuesta` y `error`. **Si contestaron y la
+conversación quedó a medias no se vuelve a llamar**: eso es insistirle a alguien
+que ya cogió el teléfono. Y con el puente caído tampoco, porque volver a
+marcar contra un puente que no está no lo levanta.
+
+Un reintento guarda sus respuestas y se anota en la bitácora bajo el id de la
+**tarea original**, no bajo el suyo. Es lo que hace que la página *Resultados*
+de esa tarea enseñe también lo que se consiguió al segundo intento; el id real
+va aparte, en el campo `id_mision`.
+
 ## El número se congela al crear la tarea
 
 Una tarea de llamada guarda el número, no el nombre: a la hora del disparo no
@@ -82,7 +152,8 @@ Con **guardar respuestas** activado, la misión le pide al modelo que al
 terminar use la herramienta `guardar_respuestas`. Cada ejecución deja su
 fichero en `data/tareas/resultados/<id-tarea>/`, y el planificador anota cada
 disparo en `data/tareas/bitacora.jsonl` (`hablado`, `llamada_contestada`,
-`sin_respuesta`, `sin_sala`, `error`). La página **Resultados** de cada tarea
+`sin_respuesta`, `sin_sala`, `error`, y para las puntuales también `caducada` y
+`cancelada`). La página **Resultados** de cada tarea
 enseña ambas cosas; el panel solo lee, quien escribe es el agente.
 
 Si cuelgan a mitad de cuestionario, el resultado es el que sea: la bitácora
@@ -97,6 +168,13 @@ llegó a guardarlas.
 - El saludo al descolgar es el general (`telefonia_saludo_llamada`), no uno
   por tarea.
 - Las tareas son globales, no por perfil.
+- Las misiones puntuales **no admiten cron**: son un momento y ya. Para algo
+  que se repita, hay que crear una tarea desde el panel.
+- El planificador ejecuta **una misión cada vez**. `MisionesLlamada` tiene un
+  único hueco pendiente, y hoy basta justo por eso; si algún día se paralelizan
+  las misiones, es lo primero que hay que rehacer.
+- `bitacora.jsonl` no está acotada, y los reintentos la hacen crecer más
+  deprisa.
 
 ## Dónde está cada cosa
 
@@ -104,6 +182,9 @@ llegó a guardarlas.
 |---|---|
 | Parser cron (compartido panel/agente) | `packages/core/src/voice_agent_core/cron.py` |
 | Modelos del contrato `tareas.json` | `packages/core/src/voice_agent_core/tareas.py` |
+| Modelos de las misiones puntuales y `EncargoLlamada` | `packages/core/src/voice_agent_core/misiones.py` |
+| Almacén de misiones (único escritor de su fichero) | `src/voice_agent/misiones_agente.py` |
+| Las cuatro herramientas de agenda | `src/voice_agent/tools/misiones.py` |
 | Planificador, misiones y correlación SCO | `src/voice_agent/tareas_programadas.py` |
 | Prompt de llamada de misión | `src/voice_agent/telefonia_llamada.py` |
 | Herramienta `guardar_respuestas` | `src/voice_agent/tools/tareas.py` |

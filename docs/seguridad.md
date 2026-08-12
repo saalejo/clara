@@ -93,6 +93,27 @@ Todos en `Settings`, todos ajustables desde el panel salvo el código:
 | `WEB_INACTIVIDAD_SECS` | 300 s | Una pestaña abierta y olvidada, que mantiene viva la conexión de streaming con Deepgram |
 | Cuerpo de `/api/offer` | 64 KB | Una oferta SDP real no llega a 10 KB; leer megabytes para descartarlos sería regalar la RAM de la placa |
 
+## El navegador no agenda llamadas
+
+Las cuatro herramientas de agenda —`programar_llamada` y compañía, ver
+[`tareas.md`](tareas.md)— **no están montadas en el pipeline del navegador**, y
+en `web.py` el `incluir_agenda=False` está escrito a mano aunque sea el valor por
+defecto, precisamente para que esto no se "arregle" por descuido.
+
+El motivo: quien entra por el enlace es alguien con un código, no alguien de
+confianza. Programar una llamada es marcar un número arbitrario desde la placa
+—con los minutos del plan del móvil— solo que en diferido, y en diferido es
+peor: cuando la llamada salga, ya no habrá ninguna sesión que cortar ni cuota que
+consumir. Los límites de arriba acotan lo que un visitante puede gastar
+*durante* su sesión, y una acción diferida se escapa de todos ellos por
+construcción.
+
+Donde sí están es en la sala (delante de la placa, físicamente) y dentro de una
+llamada telefónica, que es donde tienen sentido: ahí quien habla es un paciente
+al que el equipo ya estaba llamando. El arnés de calidad tampoco las lleva,
+porque corre contra un `data_dir` de sandbox y sus escenarios adversarios
+incluyen justo intentos de que el agente haga cosas que no debe.
+
 ## No desalojar a quien está hablando
 
 Es el cambio más delicado de todos, porque el comportamiento anterior arreglaba

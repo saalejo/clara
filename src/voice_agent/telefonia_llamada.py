@@ -40,6 +40,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.workers.runner import WorkerRunner
 
 from voice_agent.fillers import FillerBank, FillerProcessor
+from voice_agent.misiones_agente import AlmacenMisiones
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
 from voice_agent.respaldo import resumen_de_respaldo
@@ -152,7 +153,7 @@ def _prompt_de_llamada(
                 nombre=llamada.nombre_agenda, numero=llamada.numero or "desconocido"
             )
     else:
-        prompt = base + PROMPT_LLAMADA_MISION + instruccion_mision_llamada(mision.tarea)
+        prompt = base + PROMPT_LLAMADA_MISION + instruccion_mision_llamada(mision.encargo)
     if ficha is not None:
         prompt += PROMPT_HISTORIAL_PREVIO.format(
             total=ficha.total_llamadas,
@@ -250,8 +251,8 @@ async def _conversar(
     # consulta ANTES de registrar la llamada actual, para que el prompt hable
     # solo de las anteriores.
     if mision is not None:
-        numero = mision.tarea.contacto_numero
-        nombre = mision.tarea.contacto_nombre
+        numero = mision.encargo.contacto_numero
+        nombre = mision.encargo.contacto_nombre
         direccion = "mision"
     else:
         numero = llamada_actual.numero if llamada_actual is not None else ""
@@ -294,7 +295,14 @@ async def _conversar(
         # le anuncias una herramienta ausente dice que la ha consultado y se
         # queda callado esperándola. Sin recursos (índice ausente) no se ofrece
         # ninguna, que es lo coherente con ese mismo principio.
-        tools=herramientas_activas(runtime.herramientas_desactivadas, incluir_telefonia=False)
+        # La agenda SÍ, y su bandera es aparte justo por esto: dentro de una
+        # llamada es donde hace falta poder decir "llámame mañana a las cinco".
+        tools=herramientas_activas(
+            runtime.herramientas_desactivadas,
+            incluir_telefonia=False,
+            incluir_agenda=servicios.recursos is not None
+            and servicios.recursos.almacen_misiones is not None,
+        )
         if servicios.recursos is not None
         else NOT_GIVEN,
     )
@@ -416,6 +424,7 @@ class ServiciosDeLlamada:
         runtime: RuntimeConfig,
         retriever: Retriever | None = None,
         historial: HistorialPacientes | None = None,
+        almacen: AlmacenMisiones | None = None,
     ) -> None:
         """Prepara el almacén sin cargar nada todavía.
 
@@ -429,11 +438,15 @@ class ServiciosDeLlamada:
                 seguro.
             historial: La memoria entre llamadas por número, compartida por
                 el proceso; las herramientas la reciben en los recursos.
+            almacen: La agenda de misiones puntuales, compartida con el
+                planificador. Es lo que permite que, dentro de una llamada,
+                alguien pida que se le llame en otro momento y quede agendado.
         """
         self._settings = settings
         self._runtime = runtime
         self._retriever = retriever
         self._historial = historial
+        self._almacen = almacen
         self._listos: tuple[Any, Any, Any] | None = None
         self._cargando: asyncio.Task[None] | None = None
         self._banco: FillerBank | None = None
@@ -484,6 +497,7 @@ class ServiciosDeLlamada:
                         settings=self._settings,
                         retriever=self._retriever or Retriever(self._settings),
                         historial=self._historial,
+                        almacen_misiones=self._almacen,
                     )
                 except Exception:
                     logger.exception("Sin RAG para las llamadas; se atenderá sin herramientas")

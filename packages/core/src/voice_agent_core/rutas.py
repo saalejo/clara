@@ -8,6 +8,8 @@ que un cambio de nombre no se convierta en una cacería.
     <DATA_DIR>/config/settings.json          panel -> agente (campos de Settings)
     <DATA_DIR>/config/runtime.json           panel -> agente (prompt, alma, tools, mcp, hooks)
     <DATA_DIR>/config/tareas.json            panel -> agente (tareas programadas)
+    <DATA_DIR>/config/misiones_agente.json     agente -> panel (misiones puntuales)
+    <DATA_DIR>/config/misiones_canceladas.json panel -> agente (cancelaciones)
     <DATA_DIR>/config/estado_arranque.json   agente -> panel (qué cargó de verdad)
     <DATA_DIR>/logs/agente.log               agente -> panel (log en vivo)
     <DATA_DIR>/tareas/resultados/<id>/       agente -> panel (respuestas de cuestionarios)
@@ -37,6 +39,8 @@ NOMBRE_LOTE_CALIDAD = "lote.json"
 NOMBRE_SNAPSHOT_SETTINGS = "settings.json"
 NOMBRE_RUNTIME = "runtime.json"
 NOMBRE_TAREAS = "tareas.json"
+NOMBRE_MISIONES = "misiones_agente.json"
+NOMBRE_MISIONES_CANCELADAS = "misiones_canceladas.json"
 NOMBRE_ESTADO = "estado_arranque.json"
 NOMBRE_LOG_AGENTE = "agente.log"
 NOMBRE_BITACORA_TAREAS = "bitacora.jsonl"
@@ -64,6 +68,30 @@ def ruta_runtime(data_dir: Path) -> Path:
 def ruta_tareas(data_dir: Path) -> Path:
     """Tareas programadas que el panel exporta y el agente recarga en caliente."""
     return dir_config(data_dir) / NOMBRE_TAREAS
+
+
+def ruta_misiones_agente(data_dir: Path) -> Path:
+    """Misiones puntuales que el agente se inventa hablando.
+
+    **Lo escribe el agente**, y solo él: es la única forma de que una llamada
+    programada a mitad de una conversación suene sin pasar por el panel. El
+    panel lo lee para enseñarlas y no lo toca nunca — si escribiera aquí,
+    pisaría lo que el agente acabara de apuntar (ver `ruta_tareas`, que va al
+    revés).
+    """
+    return dir_config(data_dir) / NOMBRE_MISIONES
+
+
+def ruta_misiones_canceladas(data_dir: Path) -> Path:
+    """Peticiones del panel para cancelar misiones puntuales del agente.
+
+    **Lo escribe el panel**, y es el camino de vuelta del fichero de arriba:
+    como el dueño de las misiones es el agente, el botón de cancelar no borra
+    nada, deja apuntado el id aquí y el planificador lo recoge en su siguiente
+    vuelta. El panel poda los ids que ya no correspondan a ninguna misión
+    pendiente, así que el fichero no crece sin fin.
+    """
+    return dir_config(data_dir) / NOMBRE_MISIONES_CANCELADAS
 
 
 def dir_tareas(data_dir: Path) -> Path:
