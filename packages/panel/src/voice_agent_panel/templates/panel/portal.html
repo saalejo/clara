@@ -31,22 +31,36 @@
 
   <main>
     <section class="heroe">
-      <p class="pauta" aria-hidden="true">fig. 01 — asistente</p>
-      <h1>Clara</h1>
-      <svg class="subrayado" viewBox="0 0 340 26" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-        <path d="M6 15 C 70 7, 160 21, 334 11" filter="url(#lapiz)"/>
-        <path class="repaso" d="M10 19 C 90 12, 190 22, 326 15" filter="url(#lapiz-fino)"/>
-      </svg>
-      <p class="lema">Agente de voz de seguimiento postoperatorio</p>
-      <p class="parrafo">
-        Llama por teléfono o habla desde el navegador: Clara pregunta cómo va la
-        recuperación, responde con la guía clínica de cada cirugía y avisa al
-        equipo cuando algo no cuadra.
-      </p>
-      <div class="acciones">
-        <a class="cta principal" href="{{ url_voz }}">Hablar con Clara</a>
-        <a class="cta secundaria" href="{{ url_panel }}">Panel del jurado</a>
+      <div class="heroe-texto">
+        <p class="pauta" aria-hidden="true">fig. 01 — asistente</p>
+        <h1>Clara</h1>
+        <svg class="subrayado" viewBox="0 0 340 26" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+          <path d="M6 15 C 70 7, 160 21, 334 11" filter="url(#lapiz)"/>
+          <path class="repaso" d="M10 19 C 90 12, 190 22, 326 15" filter="url(#lapiz-fino)"/>
+        </svg>
+        <p class="lema">Agente de voz de seguimiento postoperatorio</p>
+        <p class="parrafo">
+          Llama por teléfono o habla desde el navegador: Clara pregunta cómo va la
+          recuperación, responde con la guía clínica de cada cirugía y avisa al
+          equipo cuando algo no cuadra.
+        </p>
+        <div class="acciones">
+          <a class="cta principal" href="{{ url_voz }}">Hablar con Clara</a>
+          <a class="cta secundaria" href="{{ url_panel }}">Panel del jurado</a>
+        </div>
       </div>
+
+      {% comment %}Retrato a lápiz vectorizado: cinco capas de tono trazadas del
+      dibujo original, en grafito sobre el papel de la página.  Viene enderezado
+      desde el trazado y recortado a su contenido, no con un transform en el SVG,
+      que dejaría el recuadro de la foto girada.  Va en static y no en línea
+      porque son ~154 KiB de trazos: en el HTML viajarían en cada visita y no los
+      cachearía nadie.{% endcomment %}
+      <figure class="retrato-figura">
+        <img class="retrato" src="{% static 'panel/clara-retrato.svg' %}"
+             width="630" height="947" alt="Retrato a lápiz de Clara">
+        <figcaption>fig. 02 — clara, a lápiz</figcaption>
+      </figure>
     </section>
 
     <section class="pasos" aria-labelledby="titulo-pasos">
