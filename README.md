@@ -98,11 +98,11 @@ Decisiones clave, con su porqué:
   Deepgram transcribe en streaming con cero errores en la misma batería de
   pruebas. El stack de voz es libre según las reglas del reto.
 - **RAG por temas**: una colección de ChromaDB por carpeta de `corpus/`
-  (apendicitis, colecistitis, cáncer colorrectal, cáncer de mama, reemplazo
-  articular). Embeddings multilingües (MiniLM-L12-v2 por ONNX) porque el corpus
-  mezcla español e inglés y las preguntas llegan en español. Los pasajes por
-  encima del umbral de distancia se descartan y el agente dice "no lo sé" en
-  vez de improvisar.
+  (apendicitis, colecistitis, cáncer colorrectal, cáncer de cuello uterino,
+  reemplazo articular). Embeddings multilingües (MiniLM-L12-v2 por ONNX) porque
+  el corpus mezcla español e inglés y las preguntas llegan en español. Los
+  pasajes por encima del umbral de distancia se descartan y el agente dice
+  "no lo sé" en vez de improvisar.
 - **Conocimiento vivo sin reinicios**: el buscador relee la lista de
   colecciones en cada consulta, así que subir un documento y reindexar lo hace
   aparecer en caliente; la ingesta es reconciliadora (ids derivados del
