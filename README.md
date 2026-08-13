@@ -225,3 +225,10 @@ tests/                    ~1000 tests; make lint && make test
 Proyecto derivado de un agente de voz doméstico para NanoPi construido por el
 mismo autor; el historial de este repositorio empieza en la importación de esa
 base y contiene la adaptación completa al reto.
+
+## Licencia
+
+El código de este repositorio se publica bajo la licencia MIT (ver
+[LICENSE](LICENSE)). Los PDF de `corpus/` son guías y artículos clínicos de
+terceros, incluidos solo como material de demostración del RAG: cada uno
+conserva la licencia de su editor y la MIT no se les aplica.
