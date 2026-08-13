@@ -18,6 +18,7 @@ que un cambio de nombre no se convierta en una cacería.
     <DATA_DIR>/calidad/lote.json             runner -> panel (progreso del lote)
     <DATA_DIR>/calidad/resultados/<id>.json  runner -> panel (expediente por ejecución)
     <DATA_DIR>/calidad/sandbox/<id>/         runner (data_dir aislado de cada ensayo)
+    <DATA_DIR>/ingesta/progreso.json         ingesta -> panel (avance de la reindexación)
 """
 
 from __future__ import annotations
@@ -32,13 +33,16 @@ SUBDIR_CONFIG = "config"
 SUBDIR_LOGS = "logs"
 SUBDIR_TAREAS = "tareas"
 SUBDIR_CALIDAD = "calidad"
+SUBDIR_INGESTA = "ingesta"
 
 NOMBRE_SOLICITUD_CALIDAD = "solicitud.json"
 NOMBRE_LOTE_CALIDAD = "lote.json"
+NOMBRE_PROGRESO_INGESTA = "progreso.json"
 
 NOMBRE_SNAPSHOT_SETTINGS = "settings.json"
 NOMBRE_RUNTIME = "runtime.json"
 NOMBRE_TAREAS = "tareas.json"
+NOMBRE_ALIAS_TEMAS = "alias_temas.json"
 NOMBRE_MISIONES = "misiones_agente.json"
 NOMBRE_MISIONES_CANCELADAS = "misiones_canceladas.json"
 NOMBRE_ESTADO = "estado_arranque.json"
@@ -68,6 +72,23 @@ def ruta_runtime(data_dir: Path) -> Path:
 def ruta_tareas(data_dir: Path) -> Path:
     """Tareas programadas que el panel exporta y el agente recarga en caliente."""
     return dir_config(data_dir) / NOMBRE_TAREAS
+
+
+def ruta_alias_temas(data_dir: Path) -> Path:
+    """Cómo llama la gente a la cirugía de cada tema del corpus.
+
+    Lo escribe el panel y lo lee el agente **en caliente**, como `tareas.json` y
+    a diferencia de `runtime.json`: los alias existen para que subir la guía de
+    una cirugía nueva la deje cubierta sin tocar código, y obligar a reiniciar
+    el agente para estrenarlos se cargaría medio propósito.
+
+    Va aquí y no dentro de la carpeta del tema por una razón concreta: escribir
+    cualquier cosa dentro de `corpus/` mueve la fecha de su carpeta, y
+    `corpus.marca_de_cambio` la usa para avisar de que falta reindexar. Editar
+    un alias —que no entra en el índice— encendería ese aviso y mandaría a
+    alguien a esperar una hora de ingesta para nada.
+    """
+    return dir_config(data_dir) / NOMBRE_ALIAS_TEMAS
 
 
 def ruta_misiones_agente(data_dir: Path) -> Path:
@@ -162,6 +183,16 @@ def dir_sandbox_calidad(data_dir: Path) -> Path:
     las páginas de Evaluaciones y Pacientes del panel.
     """
     return dir_calidad(data_dir) / "sandbox"
+
+
+def dir_ingesta(data_dir: Path) -> Path:
+    """Carpeta de lo que publica la reindexación del corpus."""
+    return data_dir / SUBDIR_INGESTA
+
+
+def ruta_progreso_ingesta(data_dir: Path) -> Path:
+    """Avance de la reindexación, que la ingesta escribe y el panel enseña."""
+    return dir_ingesta(data_dir) / NOMBRE_PROGRESO_INGESTA
 
 
 def ruta_estado(data_dir: Path) -> Path:

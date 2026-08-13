@@ -9,8 +9,7 @@
 <h2>Estado del índice</h2>
 <div class="tarjeta">
   {% if indice.reindexando %}
-    <p class="estado activo">reindexando ahora</p>
-    <p class="ayuda">Tarda un rato según el tamaño del corpus. Recarga la página para ver cómo acaba.</p>
+    <p class="estado activo" id="ingesta-estado">reindexando ahora</p>
   {% elif indice.fallo %}
     <p class="estado fallido">la última reindexación falló</p>
     <p class="ayuda">El agente sigue con el índice anterior. Mira los logs de
@@ -28,16 +27,100 @@
     <p class="ayuda">Última reindexación: {{ indice.ultimo.creado_en|date:"d/m/Y H:i" }}.</p>
   {% endif %}
 
+  <div id="ingesta-avance"{% if not indice.progreso and not indice.reindexando %} hidden{% endif %}>
+    <div class="barra" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="{{ indice.progreso.porcentaje|default:0 }}">
+      <span id="ingesta-barra" style="width:{{ indice.progreso.porcentaje|default:0 }}%"></span>
+    </div>
+    <p class="ayuda" id="ingesta-detalle">
+      {% if indice.progreso %}
+        {% if indice.reindexando %}Explorando el corpus…
+        {% elif indice.progreso.fase == "error" %}Falló: {{ indice.progreso.error }}
+        {% else %}Última pasada: {{ indice.progreso.documentos_pendientes }} documento(s)
+          indexado(s), {{ indice.progreso.documentos_sin_cambios }} sin cambios,
+          {{ indice.progreso.fragmentos_nuevos }} fragmento(s) nuevo(s) en
+          {{ indice.progreso.duracion_s|floatformat:0 }} s.{% endif %}
+      {% endif %}
+    </p>
+  </div>
+
   <div class="acciones">
     <form method="post" action="{% url 'servicio' 'ingesta' %}">{% csrf_token %}
       <input type="hidden" name="volver" value="conocimiento">
-      <button class="principal" type="submit" {% if indice.reindexando %}disabled{% endif %}>
+      <button class="principal" type="submit" id="ingesta-boton"
+              {% if indice.reindexando %}disabled{% endif %}>
         Reindexar</button></form>
   </div>
   <p class="ayuda">Reindexar reconcilia cada tema con su carpeta: añade lo nuevo, olvida lo
-    borrado y elimina las colecciones de los temas que ya no existen. El agente lo recoge
-    sin reiniciarse.</p>
+    borrado y elimina las colecciones de los temas que ya no existen. Los documentos que no
+    han cambiado no se vuelven a leer ni a vectorizar: se reconocen por su huella. El agente
+    lo recoge sin reiniciarse.</p>
 </div>
+
+<script>
+  // Sondeo corto en vez de EventSource: esto es un retrato pequeño que se relee,
+  // no un chorro que transmitir, y así no queda ningún hilo del panel ocupado
+  // durante toda la reindexación. Ver `views.conocimiento_progreso`.
+  (() => {
+    const url = "{% url 'conocimiento_progreso' %}";
+    const avance = document.getElementById("ingesta-avance");
+    const barra = document.getElementById("ingesta-barra");
+    const detalle = document.getElementById("ingesta-detalle");
+    const estado = document.getElementById("ingesta-estado");
+    const boton = document.getElementById("ingesta-boton");
+    let corriendo = {{ indice.reindexando|yesno:"true,false" }};
+
+    const describir = (d) => {
+      if (!d.fase) return "";
+      const sin = `${d.documentos_sin_cambios} sin cambios`;
+      if (d.fase === "explorando")
+        return `Explorando el corpus: ${d.documentos_total} documento(s) vistos, ${sin}.`;
+      if (d.fase === "indexando") {
+        const cual = d.documento ? ` — ${d.documento}` : "";
+        const van = Math.min(d.documentos_hechos + 1, d.documentos_pendientes);
+        return `Indexando ${van} de ${d.documentos_pendientes}${cual}. ${sin}.`;
+      }
+      if (d.fase === "limpiando") return "Olvidando los fragmentos que sobran…";
+      if (d.fase === "error") return `Falló: ${d.error}`;
+      return `Última pasada: ${d.documentos_pendientes} documento(s) indexado(s), ${sin}, ` +
+             `${d.fragmentos_nuevos} fragmento(s) nuevo(s) en ${d.duracion_s} s.`;
+    };
+
+    const pintar = (d) => {
+      if (!d.fase) return;
+      // La unidad ya está viva pero el fichero todavía es el de la pasada
+      // anterior: sin esto, la barra parpadea un 100 % antes de volver a cero.
+      const arrancando = d.en_marcha && d.terminada;
+      const porcentaje = arrancando ? 0 : d.porcentaje;
+      avance.hidden = false;
+      barra.style.width = `${porcentaje}%`;
+      avance.querySelector(".barra").setAttribute("aria-valuenow", porcentaje);
+      detalle.textContent = arrancando ? "Arrancando la reindexación…" : describir(d);
+    };
+
+    const tick = async () => {
+      let d = null;
+      try {
+        const respuesta = await fetch(url, {headers: {"Accept": "application/json"}});
+        if (respuesta.ok) d = await respuesta.json();
+      } catch (e) {
+        // Un corte de red no puede dejar la página rota: se reintenta y ya.
+      }
+      if (d) {
+        // La página entera se recarga al terminar, y no solo la barra: al acabar
+        // cambian también el veredicto del índice y los avisos de la portada.
+        if (corriendo && !d.en_marcha) { location.reload(); return; }
+        corriendo = d.en_marcha;
+        if (boton) boton.disabled = corriendo;
+        if (estado) estado.textContent = corriendo ? "reindexando ahora" : estado.textContent;
+        pintar(d);
+      }
+      setTimeout(tick, corriendo ? 1000 : 5000);
+    };
+
+    tick();
+  })();
+</script>
 
 <h2>Temas</h2>
 <div class="tarjeta">
@@ -78,6 +161,21 @@
            accept=".md,.markdown,.txt,.pdf">
     <div class="acciones"><button type="submit">Subir</button></div>
   </form>
+
+  {% if not tema.es_raiz %}
+  <form method="post" action="{% url 'tema_alias' %}">{% csrf_token %}
+    <input type="hidden" name="tema" value="{{ tema.nombre }}">
+    <label for="alias-{{ forloop.counter }}">Cómo lo llama la gente</label>
+    <input type="text" name="alias" id="alias-{{ forloop.counter }}"
+           value="{{ tema.alias }}">
+    <p class="ayuda">Separados por comas. El agente busca en los protocolos de este tema
+      cuando el paciente diga cualquiera de estos nombres, además de «{{ tema.nombre }}».
+      Sirve para lo que nadie diría por su nombre técnico: <code>vesícula</code> para una
+      colecistectomía, <code>cataratas</code> si el tema se llama <code>oftalmologia</code>.
+      No afecta al índice, así que no hace falta reindexar.</p>
+    <div class="acciones"><button type="submit">Guardar nombres</button></div>
+  </form>
+  {% endif %}
 
   {% if not tema.es_raiz %}
     {% if tema.documentos %}

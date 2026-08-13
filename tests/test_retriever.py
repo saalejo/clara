@@ -94,14 +94,16 @@ def settings(tmp_path: Path) -> Settings:
 def embeddings(monkeypatch: pytest.MonkeyPatch) -> EmbeddingsFalsos:
     """Nadie carga el modelo de verdad.
 
-    Hay que sustituirlo en los **dos** sitios: el buscador lo pide por su cuenta
-    para vectorizar la pregunta, y `store.abrir_coleccion` lo pide otra vez para
-    dárselo a la colección. Parchear solo el primero deja pasar el segundo, y el
-    síntoma es que la batería tarda el doble y baja 120 MB de modelo — que es
-    justo lo que este proyecto no quiere de sus tests.
+    Hay que sustituirlo en los **tres** sitios: el buscador lo pide por su cuenta
+    para vectorizar la pregunta, `store.abrir_coleccion` lo pide otra vez para
+    dárselo a la colección, y desde que la función de embeddings carga el modelo
+    en el primer uso el buscador llama además a `cargar_modelo` para calentarlo
+    al arrancar. Dejarse uno hace que la batería tarde el doble y baje 120 MB de
+    modelo — que es justo lo que este proyecto no quiere de sus tests.
     """
     falsos = EmbeddingsFalsos()
     monkeypatch.setattr(modulo, "funcion_embeddings", lambda *a, **k: falsos)
+    monkeypatch.setattr(modulo, "cargar_modelo", lambda *a, **k: None)
     monkeypatch.setattr("voice_agent.rag.store.funcion_embeddings", lambda *a, **k: falsos)
     return falsos
 
@@ -353,6 +355,115 @@ def test_exigir_indice_falla_si_no_hay_nada(
 
     with pytest.raises(FileNotFoundError, match="make ingest"):
         Retriever(settings)
+
+
+# --- Restricción por tema ----------------------------------------------------
+#
+# El umbral de distancia mide parecido con la consulta, no pertenencia a una
+# cirugía: medido en la placa, «cuidados de la herida cirugia de cataratas ojo»
+# recuperaba cinco pasajes de colecistitis y de reemplazo articular por debajo
+# del umbral. Restringir por tema es lo que cierra esa puerta, así que estos
+# tests vigilan sobre todo que no se pueda escapar por ninguna rendija.
+
+
+def _tres_temas(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Retriever, ClienteFalso]:
+    return _montar(
+        settings,
+        {
+            TEMA_RAIZ: [("General", "g.md", 0.30)],
+            "colecistitis": [("De la vesícula", "c.pdf", 0.20)],
+            "apendicitis": [("Del apéndice", "a.pdf", 0.10)],
+        },
+        monkeypatch,
+    )
+
+
+def test_restringir_no_llega_a_consultar_las_demas_colecciones(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """No basta con filtrar los pasajes después: no se consultan siquiera.
+
+    Filtrar a posteriori daría el mismo resultado visible y sería un error
+    silencioso el día que alguien añada un reordenamiento por el camino.
+    """
+    retriever, cliente = _tres_temas(settings, monkeypatch)
+
+    pasajes = retriever.buscar("algo", temas=["colecistitis"])
+
+    assert [p.texto for p in pasajes] == ["De la vesícula"]
+    assert cliente.colecciones["conocimiento__apendicitis"].consultas == []
+    assert cliente.colecciones["conocimiento"].consultas == []
+
+
+def test_el_tema_raiz_se_puede_pedir_junto_al_de_la_cirugia(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """Los documentos sueltos son material general y acompañan a cualquiera."""
+    retriever, _ = _tres_temas(settings, monkeypatch)
+
+    pasajes = retriever.buscar("algo", temas=["colecistitis", TEMA_RAIZ])
+
+    assert [p.texto for p in pasajes] == ["De la vesícula", "General"]
+
+
+def test_restringir_a_un_tema_que_no_existe_no_cae_a_buscar_en_todos(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """El test que impide el fallback más tentador y más peligroso.
+
+    "Si el tema pedido no está, busca en todos" parece un apaño amable y es
+    justo el fallo original: el paciente de cataratas recibiría los protocolos
+    de la vesícula. Además se comprueba que ni siquiera se vectoriza la
+    pregunta, porque el corte tiene que ocurrir antes de gastar el embedding.
+    """
+    retriever, cliente = _tres_temas(settings, monkeypatch)
+    embeddings.llamadas.clear()
+
+    assert retriever.buscar("algo", temas=["cataratas"]) == []
+    assert embeddings.llamadas == []
+    assert all(c.consultas == [] for c in cliente.colecciones.values())
+
+
+def test_sin_restringir_se_buscan_todos_los_temas(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """No regresión: `temas=None` es el comportamiento de siempre."""
+    retriever, _ = _tres_temas(settings, monkeypatch)
+
+    assert len(retriever.buscar("algo")) == 3
+
+
+def test_restringir_no_deja_al_retriever_sin_temas_para_la_siguiente(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """`_colecciones()` devuelve su diccionario por referencia.
+
+    Filtrarlo en sitio en vez de construir uno nuevo dejaría al buscador con un
+    solo tema para el resto de la llamada, y el síntoma sería que el segundo
+    paciente no encuentra nada de su cirugía.
+    """
+    retriever, _ = _tres_temas(settings, monkeypatch)
+
+    retriever.buscar("algo", temas=["colecistitis"])
+
+    assert len(retriever.buscar("algo")) == 3
+
+
+def test_un_tema_recien_indexado_se_puede_restringir_sin_reiniciar(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, embeddings: EmbeddingsFalsos
+) -> None:
+    """Subir la guía de una cirugía nueva la cubre en mitad de una llamada."""
+    retriever, cliente = _tres_temas(settings, monkeypatch)
+    assert retriever.buscar("algo", temas=["cataratas"]) == []
+
+    cliente.colecciones["conocimiento__cataratas"] = ColeccionFalsa(
+        "conocimiento__cataratas", "cataratas", [("Del ojo", "o.pdf", 0.05)]
+    )
+
+    assert [p.texto for p in retriever.buscar("algo", temas=["cataratas"])] == ["Del ojo"]
+    assert "cataratas" in retriever.temas_disponibles()
 
 
 # --- Formato para el modelo --------------------------------------------------

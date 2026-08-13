@@ -422,13 +422,25 @@ class TareaForm(forms.ModelForm):
             "guardar_respuestas",
             "contacto_nombre",
             "contacto_numero",
+            "procedimiento",
         ]
-        widgets = {"mision": forms.Textarea(attrs={"rows": 6})}
+        widgets = {
+            "mision": forms.Textarea(attrs={"rows": 6}),
+            # Un `<datalist>` nativo: sugiere los temas indexados y admite
+            # texto libre en el mismo control, sin una línea de JavaScript —el
+            # panel no carga ni un `<script>` y no hay por qué estrenarlo. Un
+            # desplegable a secas no valdría: hay que poder anotar una cirugía
+            # que el corpus NO cubre, que son justo las llamadas para las que
+            # existe la puerta de cobertura.
+            "procedimiento": forms.TextInput(attrs={"list": "temas-corpus"}),
+        }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Prepara los textos de ayuda y el hueco para la vista previa."""
+        """Prepara los textos de ayuda, las sugerencias y la vista previa."""
         super().__init__(*args, **kwargs)
         self.proximas: list[Any] = []
+        #: Los temas indexados ahora mismo, para el `<datalist>`.
+        self.temas_corpus: list[str] = corpus.listar_temas(django_settings.CORPUS_DIR)
         self.fields["cron"].help_text = (
             "Cinco campos: minuto hora día-del-mes mes día-de-la-semana. "
             "Ej.: '0 8 * * 1-5' = laborables a las 8:00; '*/30 9-21 * * *' = "
@@ -446,6 +458,32 @@ class TareaForm(forms.ModelForm):
             "Se marca tal cual a la hora del disparo. Usa el buscador para "
             "copiarlo de la agenda del móvil, o tecléalo con prefijo."
         )
+        self.fields["procedimiento"].help_text = (
+            "De qué se operó el paciente. Si eliges uno de los temas sugeridos, "
+            "el agente consultará solo los protocolos de esa cirugía. Si es una "
+            "cirugía que la base no cubre, escríbela igualmente: el agente lo "
+            "dirá claramente y remitirá al equipo médico en vez de responder "
+            "con las guías de otra operación. En blanco, se lo pregunta él."
+        )
+
+    def clean_procedimiento(self) -> str:
+        """Normaliza solo si coincide con un tema; si no, deja el texto tal cual.
+
+        Slugificar siempre sería un error: «cataratas» no es un tema y tiene
+        que poder guardarse tal como se escribió, porque una cirugía no
+        cubierta es un dato válido —es la que hace que el agente diga que no
+        puede ayudar en vez de inventarse un protocolo—. Pero «Colecistitis»
+        escrito con mayúscula sí debe acabar siendo `colecistitis`, o no casaría
+        con su carpeta.
+        """
+        texto = self.cleaned_data["procedimiento"].strip()
+        if not texto:
+            return ""
+        try:
+            candidato = corpus.normalizar_tema(texto)
+        except corpus.NombreInvalido:
+            return texto
+        return candidato if candidato in self.temas_corpus else texto
 
     def clean_nombre(self) -> str:
         """Impide invadir el espacio de nombres del agente.
@@ -490,6 +528,7 @@ class TareaForm(forms.ModelForm):
                 guardar_respuestas=datos.get("guardar_respuestas", False),
                 contacto_nombre=datos.get("contacto_nombre", ""),
                 contacto_numero=datos.get("contacto_numero", ""),
+                procedimiento=datos.get("procedimiento", ""),
             )
         except ValidationError as e:
             raise forms.ValidationError(_mensaje_de_pydantic(e)) from e

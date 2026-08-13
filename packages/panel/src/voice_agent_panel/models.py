@@ -337,6 +337,12 @@ class TareaProgramada(models.Model):
 
     contacto_nombre = models.CharField(max_length=120, blank=True)
     contacto_numero = models.CharField(max_length=40, blank=True)
+    #: De qué se operó el paciente. Es el dato que arma la puerta de cobertura
+    #: **antes del primer turno**: con él, el agente consulta solo los
+    #: protocolos de esa cirugía, y si el corpus no la cubre no consulta
+    #: ninguno en vez de contestar con los de otra. En blanco deja que sea el
+    #: agente quien lo pregunte durante la llamada.
+    procedimiento = models.CharField(max_length=120, blank=True)
 
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)

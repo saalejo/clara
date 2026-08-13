@@ -28,7 +28,11 @@ flowchart LR
 
         CORPUS["corpus/<br/>106 PDF en 5 temas"] -->|"ingesta reconciliadora<br/>rag/ingest.py"| RAG
         PANEL["Consola Django<br/>packages/panel"] -->|"subir / borrar documento<br/>+ Reindexar (systemd oneshot)"| CORPUS
-        PANEL -->|"lee alertas y resúmenes<br/>página Evaluaciones"| RESUM
+        LLM -->|"anota triaje y resumen<br/>core/historial.py"| HIST[("data/evaluaciones/<br/>historial.sqlite3")]
+        PANEL -->|"fusiona por id_llamada<br/>página Evaluaciones"| ALERTAS
+        PANEL --> RESUM
+        PANEL --> TRAZAS
+        PANEL --> HIST
     end
 ```
 

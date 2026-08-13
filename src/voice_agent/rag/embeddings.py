@@ -64,13 +64,27 @@ class FastEmbedEmbeddingFunction(EmbeddingFunction[Documents]):
     """
 
     def __init__(self, model_name: str = MODELO_POR_DEFECTO) -> None:
-        """Inicializa la función de embeddings.
+        """Inicializa la función de embeddings **sin cargar el modelo**.
+
+        La carga se aplaza hasta el primer texto que haya que vectorizar. No es
+        pereza gratuita: abrir una colección construye esta clase, y desde que
+        la ingesta reconoce por la huella los documentos que no han cambiado hay
+        un caso frecuente —reindexar sin cambios— en el que se abren todas las
+        colecciones y no se vectoriza ni un fragmento. Cargar el modelo ahí son
+        más de diez segundos de ONNX para nada.
+
+        Quien necesite el modelo caliente de antemano que llame a
+        `cargar_modelo`, como hace `Retriever.__init__`.
 
         Args:
             model_name: Identificador del modelo en el catálogo de fastembed.
         """
         self._model_name = model_name
-        self._model = cargar_modelo(model_name)
+
+    @property
+    def _model(self) -> Any:
+        """El modelo, cargado en el primer uso y compartido por la caché."""
+        return cargar_modelo(self._model_name)
 
     @staticmethod
     def name() -> str:

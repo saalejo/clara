@@ -157,8 +157,58 @@ colección sí se puede, porque se compara la colección contra su carpeta, que 
 se recorre entera.
 
 `make reingest` (o `--reset`) sigue existiendo, pero ya solo hace falta cuando
-cambia algo que invalida los vectores en sí: `EMBEDDING_MODEL`, `CHUNK_SIZE`,
-`CHUNK_OVERLAP` o `CHROMA_COLLECTION`.
+cambia algo que invalida los vectores en sí: `EMBEDDING_MODEL` o
+`CHROMA_COLLECTION`. Los cambios de `CHUNK_SIZE` y `CHUNK_OVERLAP` los reconcilia
+la ingesta normal desde que entran en la huella, que es de lo que va el apartado
+siguiente.
+
+### La huella: lo que ya está indexado no se vuelve a abrir
+
+Reconciliar por identificador de fragmento ahorra los embeddings, pero no la
+lectura: para saber si un fragmento ya estaba había que **extraer el texto del
+PDF y trocearlo**, todos los documentos, en todas las pasadas. Con los 106 PDF
+del corpus clínico eso era cerca de una hora por pasada aunque no hubiera
+cambiado ni una coma, y convertía el botón *Reindexar* del panel en algo que
+nadie se atrevía a pulsar en vivo.
+
+Ahora la ingesta empieza **explorando**: calcula la huella de cada fichero
+—SHA-256 del contenido, más `EMBEDDING_MODEL`, `CHUNK_SIZE` y `CHUNK_OVERLAP`— y
+le pregunta a la colección de su tema con qué huella indexó ese documento, que
+va en los metadatos de cada fragmento. Si coinciden **y el número de fragmentos
+cuadra**, el documento no se abre siquiera. Lo segundo no es paranoia: una
+ingesta interrumpida a mitad de un documento deja la huella correcta en los
+fragmentos que sí llegaron a escribirse, y sin contarlos se quedaría cojo para
+siempre.
+
+Que la receta del troceado entre en la huella es lo que permite quitar
+`CHUNK_SIZE` y `CHUNK_OVERLAP` de la lista de `--reset`: cambiarlos cambia la
+huella de todo el corpus, y la ingesta lo reprocesa entero sin que nadie tenga
+que acordarse.
+
+Medido en la placa, con el corpus clínico entero (107 documentos, 10 238
+fragmentos):
+
+| Pasada | Antes | Ahora |
+|---|---|---|
+| Sin cambios | ~1 h | **7 s** (3,3 s de ingesta; el resto es arrancar Python) |
+| Un documento nuevo | ~1 h | lo que cueste ese documento |
+| Adoptar el índice viejo | — | 6 min, una sola vez |
+
+La última fila es la pega, y es de una sola vez: a un índice construido antes de
+que existieran las huellas hay que leerle los documentos una vez para saber a qué
+fragmento pertenece cada cual. Esa pasada **no recalcula ni un embedding** —los
+identificadores ya coinciden, así que solo remienda los metadatos con `update`—,
+y a partir de ahí toda reindexación entra por el camino rápido.
+
+### El modelo se carga cuando hace falta
+
+Desde las huellas hay un caso muy frecuente —reindexar sin cambios— en el que se
+abren todas las colecciones y no se vectoriza ni un fragmento. Como abrir una
+colección construye la función de embeddings, cargar el modelo ahí eran más de
+diez segundos de ONNX para nada, así que `FastEmbedEmbeddingFunction` lo carga en
+el **primer uso**. El agente no se ve afectado porque `Retriever.__init__` pide
+la carga explícitamente: quien tiene que pagar esos segundos es el arranque, no
+la primera pregunta del paciente.
 
 ### El modelo se carga una sola vez
 
@@ -246,9 +296,9 @@ alguno, a costa de más latencia.
 |---|---|
 | `RAG_TOP_K` | Cuántos fragmentos se recuperan. Más contexto, pero también más tokens y más latencia. |
 | `RAG_MAX_DISTANCE` | El umbral. Subirlo hace al agente más hablador y más propenso a inventar; bajarlo, más honesto y más "no lo sé". |
-| `CHUNK_SIZE` | Tamaño de fragmento. Sube si tus documentos tienen ideas largas; baja si son muy densos. **Requiere reindexar.** |
-| `CHUNK_OVERLAP` | Solape. **Requiere reindexar.** |
-| `EMBEDDING_MODEL` | El modelo. **Requiere reindexar.** |
+| `CHUNK_SIZE` | Tamaño de fragmento. Sube si tus documentos tienen ideas largas; baja si son muy densos. **Requiere reindexar**, pero basta `make ingest`: entra en la huella y se reprocesa solo. |
+| `CHUNK_OVERLAP` | Solape. **Requiere reindexar**, igual que el anterior y por lo mismo. |
+| `EMBEDDING_MODEL` | El modelo. **Requiere `make reingest`**: cambia además la función con la que ChromaDB construyó el índice. |
 | `CHROMA_COLLECTION` | Prefijo de las colecciones. Cada tema es `<prefijo>__<tema>`. **Requiere reindexar**: las colecciones con el prefijo viejo quedan huérfanas. |
 
 ## Cuánto cuesta tener muchos temas
@@ -290,3 +340,96 @@ fijó en **0.52**: por encima de todo lo cubierto con margen, y por debajo de la
 sonda ajena más cercana — que además era la más peligrosa, porque "¿qué me tomo
 para la migraña?" recuperaba instrucciones de apendicectomía con el 0.68
 anterior. `RAG_TOP_K=5` para compensar el corpus grande.
+
+## La puerta de cobertura
+
+Aquella calibración sigue siendo cierta y dejó de ser suficiente. Las sondas
+ajenas de la tabla son de **otro dominio** —migraña, ajiaco, Australia—, y ese
+es el caso fácil. El difícil es una pregunta **postoperatoria** sobre una
+cirugía que el corpus no cubre, porque se parece muchísimo al texto
+postoperatorio de cualquier documento clínico. Medido en la placa con el índice
+real, para un paciente de cataratas:
+
+| Consulta | Qué recupera |
+|---|---|
+| `cirugia de cataratas` | 1 pasaje a **0.515**, de `colecistitis/GUIA COLECISTITIS AGUDA.pdf` — una tabla de control de cambios: ruido puro, pero pasa el umbral |
+| `cuidados de la herida cirugia de cataratas ojo` | 5 pasajes a **0.457–0.460**, de `colecistitis` y `reemplazo-articular-total`; uno casó por la frase «de los ojos», que en una guía de vesícula es la ictericia escleral |
+| `signos de alarma cirugia ocular vision borrosa` | 5 pasajes a **0.445–0.457**, todos de `apendicitis` |
+
+Están entre 0.44 y 0.52, es decir, **dentro** de la nube que la tabla de arriba
+daba por cubierta. Bajar el umbral no arregla nada: se llevaría por delante las
+consultas buenas, que viven en ese mismo rango.
+
+La razón de fondo es que **el umbral no puede decidir esto**. Mide si un
+fragmento se parece a la consulta; la cirugía del paciente no viaja en la
+consulta, así que no hay número que separe «esto es de su operación» de «esto
+es de otra». Ninguna calibración lo va a conseguir.
+
+Tampoco lo consigue pedírselo al modelo. Se intentó: la herramienta anteponía a
+los resultados una línea diciendo qué cirugías cubría la base y prohibiendo
+atribuirle guías ajenas al paciente, y el prompt del sistema lo repetía. No
+bastó — una advertencia no gana contra cinco bloques de texto clínico con pinta
+de autoridad, y el agente contestaba desde el texto.
+
+Así que la cobertura se decide **en código**, en `voice_agent_core.cobertura`:
+
+1. El procedimiento del paciente es un dato estructurado. Viene del evento de
+   llamada (`TareaProgramada.procedimiento`, que se rellena en el panel), del
+   historial del número, o —solo si no hay ninguno de los dos— de lo que el
+   modelo declare en el argumento `cirugia_del_paciente`.
+2. `resolver_cirugia` lo casa contra los temas indexados **ahora mismo**, con
+   dos brazos léxicos: una tabla de alias por tema («vesícula» → `colecistitis`)
+   y prefijo común de 5 caracteres contra el nombre del propio tema, que es lo
+   que permite que un tema recién subido se reconozca sin tocar código.
+3. Según el veredicto, `buscar_en_documentos` hace una de tres cosas:
+
+| Estado | Qué hace |
+|---|---|
+| `cubierta` | Busca **restringida a `[tema, TEMA_RAIZ]`**. De paso se acabó la contaminación cruzada: al paciente de apéndice ya no puede salirle un fragmento de la guía de la vesícula. Si ese tema no devuelve nada, **no** ensancha la búsqueda. |
+| `no_cubierta` | **No llama al retriever.** Cero extractos, e instrucción de decirlo y remitir al equipo médico. Es el mecanismo entero: la advertencia deja de competir con extractos porque no hay extractos. |
+| `ambigua` | Tampoco busca. «Un cáncer» encaja con dos temas; enseñar los dos es elegir mal dos veces. Se sale preguntando de qué órgano. |
+| `desconocida` | Único estado permisivo, y tiene que serlo: al principio de una llamada la cirugía no se sabe. Busca en todo, recorta los pasajes a un solo tema y le exige al modelo preguntar la cirugía antes de concretar. |
+
+Por qué léxico y no vectorial: el propio fallo es la refutación. Este modelo de
+embeddings le da 0.44–0.52 a texto de vesícula frente a una consulta de ojos, y
+los nombres de cirugía sueltos son todos vecinos en el espacio médico genérico.
+Además costaría un `embed_query` dentro de la ruta de latencia de la voz y
+metería no-determinismo en la única pieza que tiene que ser determinista.
+
+Se prefiere el sobre-rechazo: decir «su cirugía no está entre mis protocolos»
+sobre una que sí está es molesto y lo corrige el paciente en un turno; dar
+cuidados específicos citando guías de otra cirugía es el fallo clínico. Si una
+sonda de una cirugía cubierta sale vacía, se revisan los alias, **no** el umbral.
+
+### Cómo llama la gente a cada cirugía
+
+Es la única pieza configurable de la puerta, y la que decide si ampliar el
+corpus obliga o no a tocar código. El nombre de la carpeta ya reconoce lo obvio
+—un tema `cataratas` responde a «cataratas»— pero nadie dice «colecistitis» por
+que le hayan quitado la vesícula, y a un tema que alguien llame `oftalmologia`
+no lo va a nombrar así ningún paciente.
+
+En la página **Conocimiento**, cada tema tiene un campo *Cómo lo llama la gente*
+con una lista separada por comas. Se guardan en `data/config/alias_temas.json`,
+que escribe el panel y el agente **relee en cada consulta**: declarar un nombre
+surte efecto en mitad de una llamada, sin reindexar y sin reiniciar. Medido en
+la placa: «me cambiaron la coyuntura» pasaba de `no_cubierta` a
+`cubierta / reemplazo-articular-total` en cuanto se declaró el alias.
+
+Los alias del panel se **suman** a la tabla `ALIAS_POR_TEMA` del código, no la
+sustituyen: ampliar un tema no puede romper lo que ya funcionaba. Y no
+secuestran nada — sigue ganando el tema que más términos casa, así que un alias
+demasiado general no se lleva a un paciente de otra cirugía.
+
+El fichero vive en `data/` y no dentro de la carpeta del tema por un motivo muy
+concreto: escribir cualquier cosa bajo `corpus/` mueve la fecha de su carpeta, y
+`corpus.marca_de_cambio` la usa para avisar de que falta reindexar. Editar un
+alias —que no entra en el índice— encendería ese aviso y mandaría a alguien a
+esperar una hora de ingesta para nada.
+
+**La puerta en sí no tiene interruptor, y es deliberado.** Es una salvaguarda
+clínica: un botón que la apague devuelve en silencio el fallo que existe para
+impedir, y lo natural es pulsarlo justo cuando algo parece atascado en una
+demostración. Para una instalación que no la quiera, el panel ya tiene la
+palanca correcta y a la granularidad correcta: desactivar `buscar_en_documentos`
+para ese perfil, con lo que no hay RAG que gobernar.

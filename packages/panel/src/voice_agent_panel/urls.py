@@ -37,8 +37,14 @@ urlpatterns = [
     # El nombre del tema y el del documento viajan en el cuerpo del POST, nunca
     # en la ruta: así ningún convertidor de URL puede acabar admitiendo barras.
     path("panel/conocimiento/", views.conocimiento, name="conocimiento"),
+    path(
+        "panel/conocimiento/progreso/",
+        views.conocimiento_progreso,
+        name="conocimiento_progreso",
+    ),
     path("panel/conocimiento/temas/nuevo/", views.tema_crear, name="tema_crear"),
     path("panel/conocimiento/temas/borrar/", views.tema_borrar, name="tema_borrar"),
+    path("panel/conocimiento/temas/alias/", views.tema_alias, name="tema_alias"),
     path(
         "panel/conocimiento/documentos/borrar/",
         views.documento_borrar,
@@ -58,6 +64,14 @@ urlpatterns = [
     # siendo carpeta, así que viaja en el cuerpo del POST como los del corpus.
     path("panel/misiones/cancelar/", views.mision_cancelar, name="mision_cancelar"),
     path("panel/evaluaciones/", views.evaluaciones, name="evaluaciones"),
+    # Un id de llamada es `llamada-AAAAMMDD-HHMMSS`, `calidad-…` o `sin-traza`:
+    # slug puro. El convertidor es además lo que impide que nombre un fichero
+    # fuera de `data/evaluaciones/trazas/`.
+    path(
+        "panel/evaluaciones/<slug:id_llamada>/",
+        views.evaluacion_detalle,
+        name="evaluacion_detalle",
+    ),
     path("panel/pacientes/", views.pacientes, name="pacientes"),
     path("panel/calidad/", views.calidad, name="calidad"),
     path("panel/calidad/lanzar/", views.calidad_lanzar, name="calidad_lanzar"),

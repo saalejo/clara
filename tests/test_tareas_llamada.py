@@ -16,6 +16,7 @@ from typing import Any, cast
 import pytest
 
 from voice_agent import tareas_programadas
+from voice_agent.resources import AppResources
 from voice_agent.tareas_programadas import (
     MisionesLlamada,
     MisionPendiente,
@@ -26,8 +27,10 @@ from voice_agent.telefonia import ErrorTelefonia
 from voice_agent.telefonia_llamada import (
     PROMPT_LLAMADA,
     _prompt_de_llamada,
+    _sembrar_procedimiento,
 )
 from voice_agent_core.config import Settings
+from voice_agent_core.historial import FichaPaciente, LlamadaRegistrada
 from voice_agent_core.runtime import RuntimeConfig
 from voice_agent_core.tareas import TareaProgramada, TipoTarea
 from voice_agent_core.telefonia import EstadoLlamada, EstadoTelefonia, Llamada
@@ -127,6 +130,94 @@ class TestElPrompt:
         )
         texto = _prompt_de_llamada(RuntimeConfig(), mision)
         assert "id_tarea='revision-abuela'" in texto
+
+    def test_el_procedimiento_conocido_se_confirma_en_vez_de_preguntarse(self) -> None:
+        """Es una pista para hablar; la puerta la aplica la herramienta aparte."""
+        texto = _prompt_de_llamada(RuntimeConfig(), None, procedimiento="colecistitis")
+
+        assert "ya consta de qué se operó: colecistitis" in texto
+
+    def test_sin_procedimiento_el_prompt_no_lo_menciona(self) -> None:
+        assert "ya consta de qué se operó" not in _prompt_de_llamada(RuntimeConfig(), None)
+
+
+class TestLaSiembraDelProcedimiento:
+    """Que la puerta de cobertura quede armada ANTES del primer turno.
+
+    Es la diferencia entre una llamada programada y una entrante: en la
+    programada el dato lo escribió una persona en el panel, así que no depende
+    de que el paciente lo diga bien ni de que el reconocedor de voz lo oiga
+    bien. Y como no viene del modelo, el modelo tampoco lo puede cambiar.
+    """
+
+    def _recursos(self) -> AppResources:
+        return AppResources(
+            settings=Settings(_env_file=None),  # type: ignore[call-arg]
+            retriever=cast(Any, object()),
+        )
+
+    def test_la_mision_arma_la_puerta(self) -> None:
+        recursos = self._recursos()
+        mision = MisionPendiente(
+            encargo=tarea_llamada(procedimiento="colecistitis"), id_llamada="voicecall01"
+        )
+
+        assert _sembrar_procedimiento(recursos, mision, None) == "colecistitis"
+        assert recursos.cirugia_paciente == "colecistitis"
+        assert recursos.origen_procedimiento == "evento"
+
+    def test_sin_evento_vale_lo_que_dejo_la_llamada_anterior(self) -> None:
+        recursos = self._recursos()
+        ficha = FichaPaciente(
+            numero="3046411802",
+            total_llamadas=1,
+            ultima=LlamadaRegistrada(
+                id_llamada="anterior",
+                numero="3046411802",
+                momento="2026-08-01T10:00:00",
+                direccion="entrante",
+                procedimiento="me sacaron la vesícula",
+            ),
+        )
+
+        assert _sembrar_procedimiento(recursos, None, ficha) == "me sacaron la vesícula"
+        assert recursos.origen_procedimiento == "historial"
+
+    def test_el_evento_manda_sobre_el_historial(self) -> None:
+        """El historial puede ser de otra operación anterior del mismo número."""
+        recursos = self._recursos()
+        mision = MisionPendiente(
+            encargo=tarea_llamada(procedimiento="apendicitis"), id_llamada="voicecall01"
+        )
+        ficha = FichaPaciente(
+            numero="3046411802",
+            total_llamadas=1,
+            ultima=LlamadaRegistrada(
+                id_llamada="anterior",
+                numero="3046411802",
+                momento="2026-08-01T10:00:00",
+                direccion="entrante",
+                procedimiento="colecistitis",
+            ),
+        )
+
+        assert _sembrar_procedimiento(recursos, mision, ficha) == "apendicitis"
+        assert recursos.origen_procedimiento == "evento"
+
+    def test_sin_nada_la_puerta_queda_abierta_para_que_la_pregunte(self) -> None:
+        """Una entrante de un número nuevo: la cirugía la dice el paciente."""
+        recursos = self._recursos()
+        recursos.cirugia_paciente = "de la llamada anterior"
+        recursos.origen_procedimiento = "evento"
+
+        assert _sembrar_procedimiento(recursos, None, None) == ""
+        # Y no se arrastra: los recursos se comparten entre llamadas.
+        assert recursos.cirugia_paciente == ""
+        assert recursos.origen_procedimiento == ""
+
+    def test_sin_recursos_no_revienta(self) -> None:
+        """Si no hubo RAG que montar, la llamada se atiende igual."""
+        assert _sembrar_procedimiento(None, None, None) == ""
 
 
 class TestLaCorrelacion:

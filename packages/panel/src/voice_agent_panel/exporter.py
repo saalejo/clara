@@ -180,6 +180,7 @@ def construir_tareas() -> TareasConfig:
                     guardar_respuestas=t.guardar_respuestas,
                     contacto_nombre=t.contacto_nombre,
                     contacto_numero=t.contacto_numero,
+                    procedimiento=t.procedimiento,
                 )
                 for t in TareaProgramada.objects.all()
             ],

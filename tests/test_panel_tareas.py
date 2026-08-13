@@ -96,6 +96,99 @@ def test_una_llamada_con_numero_congelado_guarda(identificado: Client, data_dir:
     assert config.tareas[0].contacto_numero == "+573001234567"
 
 
+@pytest.fixture
+def corpus_dir(settings: Any, tmp_path: Path) -> Path:
+    """Un corpus con dos temas, para las sugerencias del procedimiento."""
+    corpus = tmp_path / "corpus"
+    (corpus / "colecistitis").mkdir(parents=True)
+    (corpus / "apendicitis").mkdir()
+    settings.CORPUS_DIR = corpus
+    return corpus
+
+
+class TestElProcedimiento:
+    """El dato que arma la puerta de cobertura antes de que suene el teléfono.
+
+    Sin él, el agente solo sabe de qué se operó el paciente si se lo dice
+    hablando, y eso lo puede confundir un reconocedor de voz o torcerlo el
+    propio modelo. Escrito en la tarea, la decisión está tomada de antemano.
+    """
+
+    def test_cruza_la_frontera_hasta_el_json_del_agente(
+        self, identificado: Client, data_dir: Path, corpus_dir: Path
+    ) -> None:
+        identificado.post(
+            reverse("tarea_nueva"),
+            _datos(
+                nombre="revision-nora",
+                tipo="llamada",
+                contacto_nombre="Nora",
+                contacto_numero="+573001234567",
+                procedimiento="colecistitis",
+            ),
+        )
+
+        config = cargar_tareas(data_dir)
+        assert config.tareas[0].procedimiento == "colecistitis"
+
+    def test_una_cirugia_que_el_corpus_no_cubre_se_guarda_igual(
+        self, identificado: Client, data_dir: Path, corpus_dir: Path
+    ) -> None:
+        """Son justo las llamadas para las que existe la puerta.
+
+        Si el formulario rechazara lo que no es un tema, no se podría
+        programar la llamada de un paciente de cataratas — que es precisamente
+        el caso en el que hace falta que el agente diga que no puede ayudar.
+        """
+        identificado.post(
+            reverse("tarea_nueva"),
+            _datos(
+                nombre="revision-ojo",
+                tipo="llamada",
+                contacto_numero="+573001234567",
+                procedimiento="me operaron de cataratas",
+            ),
+        )
+
+        config = cargar_tareas(data_dir)
+        assert config.tareas[0].procedimiento == "me operaron de cataratas"
+
+    def test_un_tema_escrito_con_mayusculas_casa_con_su_carpeta(
+        self, identificado: Client, data_dir: Path, corpus_dir: Path
+    ) -> None:
+        """«Colecistitis» tiene que acabar siendo `colecistitis`, o no casaría."""
+        identificado.post(
+            reverse("tarea_nueva"),
+            _datos(
+                nombre="revision-vesicula",
+                tipo="llamada",
+                contacto_numero="+573001234567",
+                procedimiento="Colecistitis",
+            ),
+        )
+
+        config = cargar_tareas(data_dir)
+        assert config.tareas[0].procedimiento == "colecistitis"
+
+    def test_el_formulario_sugiere_los_temas_indexados(
+        self, identificado: Client, data_dir: Path, corpus_dir: Path
+    ) -> None:
+        """Un `<datalist>` nativo, sin JavaScript: el panel no carga ninguno."""
+        respuesta = identificado.get(reverse("tarea_nueva"))
+
+        assert b'<datalist id="temas-corpus">' in respuesta.content
+        assert b'<option value="apendicitis">' in respuesta.content
+        assert b'<option value="colecistitis">' in respuesta.content
+
+    def test_sin_corpus_el_formulario_sigue_funcionando(
+        self, identificado: Client, data_dir: Path, settings: Any, tmp_path: Path
+    ) -> None:
+        """Las sugerencias son un lujo; que falte la carpeta no puede tumbarlo."""
+        settings.CORPUS_DIR = tmp_path / "no-existe"
+
+        assert identificado.get(reverse("tarea_nueva")).status_code == 200
+
+
 def test_conmutar_habilitada_reexporta(identificado: Client, data_dir: Path) -> None:
     identificado.post(reverse("tarea_nueva"), _datos())
     tarea = TareaProgramada.objects.get()

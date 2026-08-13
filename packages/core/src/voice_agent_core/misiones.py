@@ -136,6 +136,16 @@ class EncargoLlamada(Protocol):
         """Si es un cuestionario y hay que guardar lo respondido."""
         ...
 
+    @property
+    def procedimiento(self) -> str:
+        """De qué se operó el paciente, o vacío si no consta.
+
+        Va en el protocolo y no solo en `TareaProgramada` porque es lo que arma
+        la puerta de cobertura al montar el pipeline, y eso pasa igual venga la
+        llamada del cron del panel o de una misión que agendó el propio agente.
+        """
+        ...
+
 
 class MisionPuntual(BaseModel):
     """Un encargo de llamada para un momento concreto, sin repetición."""
@@ -145,6 +155,13 @@ class MisionPuntual(BaseModel):
     mision: str = Field(description="El encargo, redactado para el modelo.")
     contacto_numero: str = Field(description="El número que se marca.")
     contacto_nombre: str = Field(default="", description="A quién se llama, para el prompt.")
+    procedimiento: str = Field(
+        default="",
+        description=(
+            "De qué se operó el paciente. Arma la puerta de cobertura antes del "
+            "primer turno; vacío deja que el agente lo pregunte hablando."
+        ),
+    )
     guardar_respuestas: bool = False
     estado: EstadoMision = EstadoMision.PENDIENTE
     origen: str = Field(

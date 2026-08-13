@@ -49,6 +49,12 @@ class Alerta(BaseModel):
             completas.
         justificacion: Por qué ese nivel y no otro, citando el protocolo o
             documento que lo respalda cuando lo haya.
+        procedimiento: De qué se operó el paciente, tal y como consta. Lo pone
+            el sistema, no el modelo.
+        cobertura: Si el corpus cubría esa cirugía cuando se decidió
+            ("cubierta", "no_cubierta", "desconocida" o "ambigua"). Es lo que
+            deja auditar si un triaje se apoyó en protocolos de verdad o se
+            escaló por precaución general.
     """
 
     id_llamada: str
@@ -56,6 +62,8 @@ class Alerta(BaseModel):
     nivel: NivelAlerta
     sintomas: str
     justificacion: str
+    procedimiento: str = ""
+    cobertura: str = ""
 
 
 class ResumenLlamada(BaseModel):
@@ -74,6 +82,15 @@ class ResumenLlamada(BaseModel):
     #: memoria del modelo. Vacío solo si la llamada terminó sin triaje.
     nivel: str = ""
     paciente_y_procedimiento: str
+    #: La cirugía sola, sin el nombre del paciente y sin pasar por la prosa del
+    #: modelo: la pone el sistema desde lo que armó la puerta de cobertura. Es
+    #: la que se puede cruzar con los temas del corpus; `paciente_y_procedimiento`
+    #: es texto libre y no se puede.
+    procedimiento: str = ""
+    #: Si el corpus cubría esa cirugía: "cubierta", "no_cubierta", "desconocida"
+    #: o "ambigua". Un resumen con "no_cubierta" y ningún documento consultado
+    #: es un "no lo sé" bien hecho, no una llamada que falló.
+    cobertura: str = ""
     sintomas: str
     decision: str
     referencias: str = ""

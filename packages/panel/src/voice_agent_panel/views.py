@@ -21,12 +21,13 @@ from django.http import (
     HttpRequest,
     HttpResponse,
     JsonResponse,
+    QueryDict,
     StreamingHttpResponse,
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from voice_agent_core import board, corpus
+from voice_agent_core import board, cobertura, corpus
 from voice_agent_core.calidad import (
     CATALOGO,
     NOMBRE_CATEGORIA,
@@ -36,9 +37,21 @@ from voice_agent_core.calidad import (
     escenario_por_id,
     por_categoria,
 )
+from voice_agent_core.cobertura import Cobertura
 from voice_agent_core.cron import ErrorDeCron, ExpresionCron
 from voice_agent_core.estado import leer_estado
+from voice_agent_core.evaluaciones import NivelAlerta
+from voice_agent_core.expediente import (
+    DIRECCIONES,
+    TOPES,
+    CriteriosExpedientes,
+    leer_expediente,
+    leer_traza,
+    listar_expedientes,
+    opciones_de_filtro,
+)
 from voice_agent_core.historial import HistorialPacientes
+from voice_agent_core.ingesta import ProgresoIngesta, leer_progreso
 from voice_agent_core.misiones import (
     CancelacionesMisiones,
     cargar_cancelaciones,
@@ -46,10 +59,8 @@ from voice_agent_core.misiones import (
 )
 from voice_agent_core.runtime import EventoHook
 from voice_agent_core.rutas import (
-    dir_alertas,
     dir_resultados_calidad,
     dir_resultados_tareas,
-    dir_resumenes,
     escribir_json_atomico,
     ruta_bitacora_tareas,
     ruta_historial,
@@ -103,14 +114,17 @@ def _estado_servicio() -> tuple[control.EstadoUnidad | None, str]:
 class EstadoIndice:
     """Si lo que hay en el corpus está ya en el índice del agente.
 
-    Combina dos fuentes porque ninguna basta sola: la bitácora del panel dice
-    con qué corpus se lanzó la última reindexación, y systemd dice cómo le fue a
-    la unidad que la ejecutó —el panel encola el trabajo, no lo ejecuta—.
+    Combina tres fuentes porque ninguna basta sola: la bitácora del panel dice
+    con qué corpus se lanzó la última reindexación, systemd dice cómo le fue a
+    la unidad que la ejecutó —el panel encola el trabajo, no lo ejecuta— y el
+    fichero de progreso, que escribe la propia ingesta, dice por dónde va y
+    cuánto de lo que hay en el corpus se ha podido reaprovechar.
     """
 
     marca_actual: float
     ultimo: Reindexado | None
     unidad: control.EstadoUnidad | None
+    progreso: ProgresoIngesta | None = None
 
     @property
     def sin_constancia(self) -> bool:
@@ -162,15 +176,20 @@ def _estado_del_indice() -> EstadoIndice:
     Y por eso `unidad = None` significa "nada que objetar", que es justo lo que
     hace falta para que un fallo de D-Bus tampoco impida ver el corpus.
     """
-    try:
-        unidad = control.estado(django_settings.UNIDAD_INGESTA)
-    except control.ErrorDeControl:
-        unidad = None
     return EstadoIndice(
         marca_actual=corpus.marca_de_cambio(django_settings.CORPUS_DIR),
         ultimo=Reindexado.objects.first(),
-        unidad=unidad,
+        unidad=_unidad_de_ingesta(),
+        progreso=leer_progreso(django_settings.DATA_DIR),
     )
+
+
+def _unidad_de_ingesta() -> control.EstadoUnidad | None:
+    """El estado de la unidad de ingesta, o None si no se pudo preguntar."""
+    try:
+        return control.estado(django_settings.UNIDAD_INGESTA)
+    except control.ErrorDeControl:
+        return None
 
 
 # --- Portada -----------------------------------------------------------------
@@ -529,11 +548,22 @@ def conocimiento(request: HttpRequest) -> HttpResponse:
     else:
         formulario = DocumentoForm()
 
+    # Los alias viven en `data/`, no en el corpus, y por eso se cosen aquí en
+    # vez de venir en el `Tema` (ver `rutas.ruta_alias_temas`).
+    alias = cobertura.cargar_alias(django_settings.DATA_DIR)
     return render(
         request,
         "panel/conocimiento.html",
         {
-            "temas": corpus.inventario(corpus_dir),
+            "temas": [
+                {
+                    "nombre": tema.nombre,
+                    "es_raiz": tema.es_raiz,
+                    "documentos": tema.documentos,
+                    "alias": ", ".join(alias.get(tema.nombre, ())),
+                }
+                for tema in corpus.inventario(corpus_dir)
+            ],
             "form_documento": formulario,
             "form_tema": TemaForm(),
             "indice": _estado_del_indice(),
@@ -542,6 +572,48 @@ def conocimiento(request: HttpRequest) -> HttpResponse:
             "extensiones": ", ".join(sorted(corpus.EXTENSIONES_SOPORTADAS)),
         },
     )
+
+
+def conocimiento_progreso(request: HttpRequest) -> JsonResponse:
+    """El avance de la reindexación, para la barra de la página de Conocimiento.
+
+    Se sirve como una consulta corta que el navegador repite cada segundo, y no
+    como un flujo SSE como el de los logs. La diferencia no es de gusto: el log
+    es un chorro sin final que hay que *transmitir*, mientras que esto es un
+    retrato pequeño que se relee. Y una petición por segundo no deja ningún hilo
+    del panel ocupado mientras dura la reindexación —que con el corpus clínico
+    puede irse a la media hora—, mientras que una pestaña olvidada abierta sobre
+    un SSE sí lo dejaría.
+
+    Combina el fichero que escribe la ingesta con el estado de la unidad: el
+    fichero dice por dónde va, y systemd dice si sigue viva. Hace falta lo
+    segundo porque una ingesta que muera de golpe —OOM, por ejemplo— deja el
+    fichero congelado a mitad y sin nadie que lo desmienta.
+    """
+    unidad = _unidad_de_ingesta()
+    progreso = leer_progreso(django_settings.DATA_DIR)
+    datos: dict[str, Any] = {
+        "en_marcha": unidad is not None and unidad.arrancando,
+        "fallo": unidad is not None and unidad.fallido,
+    }
+    if progreso is not None:
+        datos |= {
+            "fase": str(progreso.fase),
+            "porcentaje": progreso.porcentaje,
+            "terminada": progreso.terminada,
+            "tema": progreso.tema_actual,
+            "documento": progreso.documento_actual,
+            "documentos_total": progreso.documentos_total,
+            "documentos_sin_cambios": progreso.documentos_sin_cambios,
+            "documentos_pendientes": progreso.documentos_pendientes,
+            "documentos_hechos": progreso.documentos_hechos,
+            "fragmentos_total": progreso.fragmentos_total,
+            "fragmentos_nuevos": progreso.fragmentos_nuevos,
+            "fragmentos_olvidados": progreso.fragmentos_olvidados,
+            "duracion_s": round(progreso.duracion_s, 1),
+            "error": progreso.error,
+        }
+    return JsonResponse(datos)
 
 
 @require_POST
@@ -558,6 +630,39 @@ def tema_crear(request: HttpRequest) -> HttpResponse:
         messages.error(request, str(e))
     else:
         messages.success(request, f"Tema '{nombre}' creado. Sube dentro sus documentos.")
+    return redirect("conocimiento")
+
+
+@require_POST
+def tema_alias(request: HttpRequest) -> HttpResponse:
+    """Declara con qué nombres reconoce el agente la cirugía de un tema.
+
+    No toca el corpus ni el índice: los alias solo alimentan la puerta de
+    cobertura, y el agente los relee en cada consulta. Por eso el mensaje dice
+    que ya está aplicado y no que falte reindexar, a diferencia de subir o
+    borrar un documento.
+    """
+    tema = request.POST.get("tema", "")
+    if tema not in corpus.listar_temas(django_settings.CORPUS_DIR):
+        messages.error(request, f"El tema '{tema}' no existe.")
+        return redirect("conocimiento")
+
+    alias = cobertura.cargar_alias(django_settings.DATA_DIR)
+    nombres = [texto.strip() for texto in request.POST.get("alias", "").split(",")]
+    alias[tema] = tuple(n for n in nombres if n)
+    try:
+        cobertura.guardar_alias(django_settings.DATA_DIR, alias)
+    except OSError as e:
+        messages.error(request, f"No se pudieron guardar los nombres: {e}")
+    else:
+        cuantos = len(alias[tema])
+        messages.success(
+            request,
+            f"'{tema}': {cuantos} nombre(s) guardado(s). El agente ya los usa; "
+            "no hace falta reindexar ni reiniciar."
+            if cuantos
+            else f"'{tema}' vuelve a reconocerse solo por su nombre.",
+        )
     return redirect("conocimiento")
 
 
@@ -813,47 +918,91 @@ def tarea_borrar(request: HttpRequest, pk: int) -> HttpResponse:
     return redirect("tareas")
 
 
-def _leer_json_de(carpeta: Any, tope: int = 50) -> list[dict[str, Any]]:
-    """Lee los últimos JSON de una carpeta, tolerando ficheros a medias."""
-    elementos: list[dict[str, Any]] = []
-    if carpeta.is_dir():
-        for fichero in sorted(carpeta.iterdir(), reverse=True)[:tope]:
-            try:
-                elementos.append(json.loads(fichero.read_text(encoding="utf-8")))
-            except (OSError, ValueError):
-                continue
-    return elementos
+def _siguiente_tope(actual: int) -> int | None:
+    """El siguiente peldaño de la escalera de tamaños, o `None` si ya está arriba."""
+    return next((tope for tope in TOPES if tope > actual), None)
+
+
+def _consulta_sin(parametros: QueryDict, *quitar: str) -> str:
+    """La cadena de consulta actual sin los parámetros dados.
+
+    Es lo que hace que «Ver más» y el enlace al detalle conserven los filtros:
+    un filtro que no sobrevive a un clic no sirve de nada.
+    """
+    copia = parametros.copy()
+    for clave in quitar:
+        copia.pop(clave, None)
+    return copia.urlencode()
 
 
 def evaluaciones(request: HttpRequest) -> HttpResponse:
-    """Las alertas de triaje y los resúmenes de llamada del seguimiento clínico.
+    """Las evaluaciones clínicas: una llamada por fila, filtrable y navegable.
 
-    Todo sale de los JSON que el agente escribe con `registrar_alerta` y
-    `finalizar_llamada`; el panel solo lee, igual que con las tareas.
+    Cada fila es la fusión de lo que el agente dejó en dos sitios —los JSON de
+    `registrar_alerta`/`finalizar_llamada` y la fila del historial SQLite—, que
+    es lo que hace `voice_agent_core.expediente`. El panel solo lee.
+
+    Es la única página del panel con formulario GET, y a propósito: un filtro
+    tiene que sobrevivir a recargar y a compartir el enlace.
     """
+    criterios, avisos = CriteriosExpedientes.desde_parametros(request.GET)
+    resultado = listar_expedientes(django_settings.DATA_DIR, criterios)
+    opciones = opciones_de_filtro(
+        django_settings.DATA_DIR, (e.procedimiento for e in resultado.expedientes)
+    )
     return render(
         request,
         "panel/evaluaciones.html",
         {
-            "alertas": _leer_json_de(dir_alertas(django_settings.DATA_DIR)),
-            "resumenes": _leer_json_de(dir_resumenes(django_settings.DATA_DIR)),
+            "criterios": criterios,
+            "avisos": avisos,
+            "resultado": resultado,
+            "opciones": opciones,
+            "niveles": list(NivelAlerta),
+            "coberturas": list(Cobertura),
+            "direcciones": DIRECCIONES,
+            "siguiente_tope": _siguiente_tope(criterios.tope),
+            "consulta": _consulta_sin(request.GET, "limite"),
+        },
+    )
+
+
+def evaluacion_detalle(request: HttpRequest, id_llamada: str) -> HttpResponse:
+    """Todo lo de una llamada en un sitio, incluida su traza documental.
+
+    La ficha del paciente solo se pide si la llamada llegó a abrirla: las de
+    navegador, número oculto o aplicación no tienen, y eso es diseño y no
+    avería (ver `numero_identificable`).
+    """
+    expediente = leer_expediente(django_settings.DATA_DIR, id_llamada)
+    if expediente is None:
+        raise Http404("Esa llamada no consta ni en los ficheros ni en el historial.")
+    ficha = None
+    if expediente.numero:
+        historial = HistorialPacientes(ruta_historial(django_settings.DATA_DIR))
+        ficha = historial.ficha(expediente.numero)
+    return render(
+        request,
+        "panel/evaluacion_detalle.html",
+        {
+            "e": expediente,
+            "ficha": ficha,
+            "traza": leer_traza(django_settings.DATA_DIR, id_llamada),
+            "consulta": request.GET.urlencode(),
         },
     )
 
 
 def pacientes(request: HttpRequest) -> HttpResponse:
-    """El historial de pacientes: qué números han llamado y qué pasó cada vez.
+    """El padrón de pacientes: qué números han llamado y cuándo fue la última vez.
 
     Sale de la base SQLite que el agente escribe en el volumen compartido
-    (`data/evaluaciones/historial.sqlite3`); el panel solo lee, igual que con
-    las evaluaciones. Si el fichero no existe todavía, la página sale vacía.
+    (`data/evaluaciones/historial.sqlite3`); el panel solo lee. El expediente de
+    cada llamada no se repite aquí: vive en Evaluaciones, a un clic desde cada
+    ficha. Si el fichero no existe todavía, la página sale vacía.
     """
     historial = HistorialPacientes(ruta_historial(django_settings.DATA_DIR))
-    return render(
-        request,
-        "panel/pacientes.html",
-        {"fichas": historial.pacientes(), "llamadas": historial.llamadas(limite=50)},
-    )
+    return render(request, "panel/pacientes.html", {"fichas": historial.pacientes()})
 
 
 # --- Calidad -----------------------------------------------------------------

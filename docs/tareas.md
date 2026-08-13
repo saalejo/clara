@@ -146,6 +146,26 @@ en la agenda del móvil (a través del socket del puente) y copia el número
 elegido. Si el contacto cambia de número, hay que volver a buscarlo en la
 tarea.
 
+## El procedimiento arma la puerta antes del primer turno
+
+Una tarea de llamada puede llevar **de qué se operó el paciente**. El campo
+sugiere los temas indexados con un `<datalist>` —HTML nativo, el panel no carga
+JavaScript— pero admite texto libre, y eso es deliberado: hay que poder
+programar la llamada de alguien operado de cataratas, que es justo el caso en
+el que hace falta que Clara diga que no puede ayudar.
+
+Con ese dato, el agente consulta **solo** los protocolos de esa cirugía; y si
+el corpus no la cubre, no consulta ninguno en vez de contestar con los de otra
+operación. La decisión está tomada antes de que suene el teléfono y el modelo
+no puede hablarla para abrirla — a diferencia de una llamada entrante, donde la
+cirugía la tiene que decir el paciente. En blanco, Clara la pregunta como
+siempre. El mecanismo entero está en [`rag.md`](rag.md), sección *La puerta de
+cobertura*.
+
+Lo que se resuelva queda en el resumen y en el historial del número, así que la
+siguiente llamada de ese paciente arranca ya con la puerta armada aunque nadie
+vuelva a escribir nada.
+
 ## Cuestionarios y resultados
 
 Con **guardar respuestas** activado, la misión le pide al modelo que al

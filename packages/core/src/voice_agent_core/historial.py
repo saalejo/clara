@@ -46,10 +46,34 @@ CREATE TABLE IF NOT EXISTS llamadas (
     nivel TEXT NOT NULL DEFAULT '',
     paciente_y_procedimiento TEXT NOT NULL DEFAULT '',
     decision TEXT NOT NULL DEFAULT '',
-    proximos_pasos TEXT NOT NULL DEFAULT ''
+    proximos_pasos TEXT NOT NULL DEFAULT '',
+    procedimiento TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_llamadas_numero ON llamadas (numero, momento);
 """
+
+#: Columnas añadidas después de que la base existiera, con su definición.
+#:
+#: Hacen falta porque `_ESQUEMA` es todo `CREATE TABLE IF NOT EXISTS`: sobre una
+#: base ya creada **no se ejecuta nada**, así que añadir una columna ahí arriba
+#: no la añade en la placa, donde el fichero lleva meses con llamadas dentro. El
+#: síntoma sería un `no such column` en cada anotación, tragado por el
+#: `except` de la casa: el historial dejaría de anotar en silencio.
+_COLUMNAS_AÑADIDAS: tuple[tuple[str, str], ...] = (("procedimiento", "TEXT NOT NULL DEFAULT ''"),)
+
+
+def _migrar_columnas(conexion: sqlite3.Connection) -> None:
+    """Añade a `llamadas` las columnas que le falten, una a una.
+
+    Se consulta `PRAGMA table_info` en vez de intentar el ALTER y capturar el
+    error: así la operación normal —la base ya está al día— no genera ninguna
+    excepción, que es lo que conviene cuando esto corre en cada llamada.
+    """
+    existentes = {fila[1] for fila in conexion.execute("PRAGMA table_info(llamadas)")}
+    for nombre, definicion in _COLUMNAS_AÑADIDAS:
+        if nombre not in existentes:
+            conexion.execute(f"ALTER TABLE llamadas ADD COLUMN {nombre} {definicion}")
+            logger.info(f"[historial] columna '{nombre}' añadida a una base anterior.")
 
 
 class LlamadaRegistrada(BaseModel):
@@ -61,6 +85,11 @@ class LlamadaRegistrada(BaseModel):
     direccion: str = Field(description="'entrante' o 'mision'.")
     nivel: str = ""
     paciente_y_procedimiento: str = ""
+    #: La cirugía sola, como la resolvió la puerta de cobertura. Es la que
+    #: rearma la puerta cuando este número vuelve a llamar, así que no puede
+    #: salir de la prosa del modelo: `paciente_y_procedimiento` mezcla nombre y
+    #: operación en texto libre y no se puede cruzar con los temas del corpus.
+    procedimiento: str = ""
     decision: str = ""
     proximos_pasos: str = ""
 
@@ -115,6 +144,7 @@ class HistorialPacientes:
         try:
             conexion.execute("PRAGMA journal_mode=WAL")
             conexion.executescript(_ESQUEMA)
+            _migrar_columnas(conexion)
             yield conexion
             conexion.commit()
         finally:
@@ -188,19 +218,33 @@ class HistorialPacientes:
         decision: str,
         proximos_pasos: str,
         nivel: str = "",
+        procedimiento: str = "",
     ) -> None:
         """Anota el resumen de la llamada, si está registrada.
 
         El `nivel` solo pisa al de `anotar_alerta` cuando trae algo: un
-        resumen sin triaje no puede borrar el color ya decidido.
+        resumen sin triaje no puede borrar el color ya decidido. El
+        `procedimiento` sigue la misma regla y por el mismo motivo: una llamada
+        que se cortó sin llegar a saber la cirugía no puede borrar la que ya
+        constaba de la vez anterior.
         """
         try:
             with self._conexion() as conexion:
                 conexion.execute(
                     "UPDATE llamadas SET paciente_y_procedimiento = ?, decision = ?, "
-                    "proximos_pasos = ?, nivel = CASE WHEN ? != '' THEN ? ELSE nivel END "
+                    "proximos_pasos = ?, nivel = CASE WHEN ? != '' THEN ? ELSE nivel END, "
+                    "procedimiento = CASE WHEN ? != '' THEN ? ELSE procedimiento END "
                     "WHERE id_llamada = ?",
-                    (paciente_y_procedimiento, decision, proximos_pasos, nivel, nivel, id_llamada),
+                    (
+                        paciente_y_procedimiento,
+                        decision,
+                        proximos_pasos,
+                        nivel,
+                        nivel,
+                        procedimiento,
+                        procedimiento,
+                        id_llamada,
+                    ),
                 )
         except (sqlite3.Error, OSError) as e:
             logger.error(f"[historial] no pude anotar el resumen de {id_llamada}: {e}")
@@ -254,20 +298,150 @@ class HistorialPacientes:
             logger.error(f"[historial] no pude listar las llamadas: {e}")
             return []
 
-    def pacientes(self) -> list[FichaPaciente]:
-        """Todas las fichas, de la más recientemente vista a la más antigua."""
+    def llamada(self, id_llamada: str) -> LlamadaRegistrada | None:
+        """La fila de una llamada concreta, o `None` si no consta.
+
+        La pide el panel para el detalle de un expediente: es la mitad del
+        cruce que aporta el número, la dirección y el nombre, que en los JSON
+        de la evaluación no viajan.
+        """
         try:
             with self._conexion() as conexion:
-                numeros = [
+                filas = self._filas_llamadas(
+                    conexion, "WHERE id_llamada = ?", (id_llamada,), limite=1
+                )
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[historial] no pude leer la llamada {id_llamada}: {e}")
+            return None
+        return filas[0] if filas else None
+
+    def buscar_llamadas(
+        self,
+        *,
+        numero: str = "",
+        direccion: str = "",
+        desde: str = "",
+        hasta_exclusivo: str = "",
+        limite: int = 200,
+    ) -> list[LlamadaRegistrada]:
+        """Las llamadas que cumplen los filtros, de la más reciente a la más antigua.
+
+        Filtra por los tres campos que **solo** viven aquí —número, dirección y
+        momento—, y eso es justo lo que hace seguro empujarlos a SQL. El triaje
+        y el procedimiento también constan en los JSON de la evaluación, así que
+        filtrarlos aquí escondería una llamada cuya anotación se hubiera perdido
+        por el camino: esos se filtran después, sobre el expediente ya fusionado.
+
+        Args:
+            numero: Número exacto; vacío no filtra.
+            direccion: "entrante" o "mision"; vacío no filtra.
+            desde: Momento ISO mínimo, inclusive. Basta con el día
+                (`AAAA-MM-DD`): los momentos son ISO naive de ancho fijo, así
+                que compararlos como cadenas es compararlos como fechas.
+            hasta_exclusivo: Momento ISO máximo, **exclusivo**. Para incluir un
+                día entero se le pasa el día siguiente.
+            limite: Cuántas como máximo.
+        """
+        condiciones: list[str] = []
+        parametros: list[str] = []
+        for campo, valor, comparador in (
+            ("numero", numero, "="),
+            ("direccion", direccion, "="),
+            ("momento", desde, ">="),
+            ("momento", hasta_exclusivo, "<"),
+        ):
+            if valor:
+                condiciones.append(f"{campo} {comparador} ?")
+                parametros.append(valor)
+        condicion = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+        try:
+            with self._conexion() as conexion:
+                return self._filas_llamadas(conexion, condicion, tuple(parametros), limite=limite)
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[historial] no pude buscar llamadas: {e}")
+            return []
+
+    def procedimientos(self) -> list[str]:
+        """Los procedimientos distintos que constan, para el filtro del panel."""
+        try:
+            with self._conexion() as conexion:
+                return [
                     fila[0]
                     for fila in conexion.execute(
-                        "SELECT numero FROM pacientes ORDER BY actualizado_en DESC"
+                        "SELECT DISTINCT procedimiento FROM llamadas "
+                        "WHERE procedimiento != '' ORDER BY procedimiento"
                     )
                 ]
         except (sqlite3.Error, OSError) as e:
+            logger.error(f"[historial] no pude listar los procedimientos: {e}")
+            return []
+
+    def nombres(self) -> dict[str, str]:
+        """El nombre conocido de cada número, en una sola consulta.
+
+        Es lo que evita una consulta por llamada al pintar una lista larga en
+        el panel.
+        """
+        try:
+            with self._conexion() as conexion:
+                return {
+                    fila[0]: fila[1]
+                    for fila in conexion.execute("SELECT numero, nombre FROM pacientes")
+                }
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[historial] no pude leer los nombres: {e}")
+            return {}
+
+    def pacientes(self) -> list[FichaPaciente]:
+        """Todas las fichas, de la más recientemente vista a la más antigua.
+
+        En una sola consulta y una sola conexión, no una por paciente: el panel
+        la pide dos veces por página —el padrón y el desplegable del filtro de
+        Evaluaciones— y abrir el WAL cuarenta veces en la placa se nota.
+
+        El `JOIN` (y no `LEFT JOIN`) conserva la regla de `ficha()`: un número
+        registrado que no tenga ninguna llamada no produce ficha.
+        """
+        consulta = """
+            SELECT p.numero, p.nombre, c.total,
+                   u.id_llamada, u.momento, u.direccion, u.nivel,
+                   u.paciente_y_procedimiento, u.decision, u.proximos_pasos,
+                   u.procedimiento
+            FROM pacientes p
+            JOIN (SELECT numero, COUNT(*) AS total FROM llamadas GROUP BY numero) c
+              ON c.numero = p.numero
+            JOIN (SELECT *, ROW_NUMBER() OVER (
+                      PARTITION BY numero ORDER BY momento DESC, id_llamada DESC
+                  ) AS orden FROM llamadas) u
+              ON u.numero = p.numero AND u.orden = 1
+            ORDER BY p.actualizado_en DESC
+        """
+        try:
+            with self._conexion() as conexion:
+                filas = conexion.execute(consulta).fetchall()
+        except (sqlite3.Error, OSError) as e:
             logger.error(f"[historial] no pude listar los pacientes: {e}")
             return []
-        return [ficha for numero in numeros if (ficha := self.ficha(numero)) is not None]
+        return [
+            FichaPaciente(
+                numero=fila[0],
+                nombre=fila[1],
+                total_llamadas=int(fila[2]),
+                ultima=LlamadaRegistrada(
+                    id_llamada=fila[3],
+                    numero=fila[0],
+                    momento=fila[4],
+                    direccion=fila[5],
+                    nivel=fila[6],
+                    paciente_y_procedimiento=fila[7],
+                    decision=fila[8],
+                    proximos_pasos=fila[9],
+                    procedimiento=fila[10],
+                ),
+            )
+            for fila in filas
+            if numero_identificable(fila[0])
+        ]
 
     @staticmethod
     def _filas_llamadas(
@@ -279,7 +453,8 @@ class HistorialPacientes:
     ) -> list[LlamadaRegistrada]:
         filas = conexion.execute(
             "SELECT id_llamada, numero, momento, direccion, nivel, paciente_y_procedimiento, "
-            f"decision, proximos_pasos FROM llamadas {condicion} ORDER BY momento DESC LIMIT ?",
+            f"decision, proximos_pasos, procedimiento FROM llamadas {condicion} "
+            "ORDER BY momento DESC LIMIT ?",
             (*parametros, limite),
         ).fetchall()
         return [
@@ -292,6 +467,7 @@ class HistorialPacientes:
                 paciente_y_procedimiento=fila[5],
                 decision=fila[6],
                 proximos_pasos=fila[7],
+                procedimiento=fila[8],
             )
             for fila in filas
         ]

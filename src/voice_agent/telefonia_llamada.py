@@ -107,6 +107,57 @@ desde entonces en vez de empezar de cero— pero confirma antes que hablas con
 la misma persona: el historial es del teléfono, no de quien contesta."""
 
 
+#: Se añade cuando ya se sabe de qué se operó el paciente antes de descolgar:
+#: lo trae la tarea del panel, la misión, o el historial del número.
+#:
+#: Es una pista para CONVERSAR, no la puerta. La puerta la aplica
+#: `buscar_en_documentos` con este mismo dato, en código y sin pasar por aquí:
+#: decírselo al modelo en prosa es exactamente lo que ya se intentó y lo que
+#: falló, así que este texto no puede ser lo único que impida atribuirle a un
+#: paciente las guías de otra cirugía.
+PROMPT_PROCEDIMIENTO_CONOCIDO = """
+
+De este paciente ya consta de qué se operó: {procedimiento}. Confírmalo con
+naturalidad al principio en vez de preguntarlo desde cero, y si te dice que no
+es eso, quédate con lo que él te diga."""
+
+
+def _sembrar_procedimiento(
+    recursos: AppResources | None,
+    mision: MisionPendiente | None,
+    ficha: FichaPaciente | None,
+) -> str:
+    """Deja armada la puerta de cobertura antes del primer turno.
+
+    Se prefiere el evento al historial y el historial al silencio, que es el
+    orden de fiabilidad: el procedimiento de una tarea lo escribió una persona
+    en el panel, el del historial lo resolvió esta misma puerta en una llamada
+    anterior, y lo que no venga de ninguno de los dos tendrá que decirlo el
+    paciente hablando. Lo que no puede pasar es que un dato de los dos primeros
+    lo pise después el modelo: por eso se anota también de dónde salió.
+
+    Args:
+        recursos: Los recursos compartidos, o `None` si no hubo RAG que montar.
+        mision: La misión que marcó esta llamada, si la hay.
+        ficha: El historial del número, si ya llamó antes.
+
+    Returns:
+        El procedimiento con el que queda armada, o vacío si no se sabe.
+    """
+    if recursos is None:
+        return ""
+
+    del_evento = mision.encargo.procedimiento.strip() if mision is not None else ""
+    del_historial = ficha.ultima.procedimiento.strip() if ficha is not None else ""
+    procedimiento, origen = (del_evento, "evento") if del_evento else (del_historial, "historial")
+
+    recursos.cirugia_paciente = procedimiento
+    recursos.origen_procedimiento = origen if procedimiento else ""
+    if procedimiento:
+        logger.info(f"[cobertura] la llamada arranca con «{procedimiento}» (del {origen})")
+    return procedimiento
+
+
 def _describir_ficha(ficha: FichaPaciente) -> str:
     """Resume la última llamada de la ficha en una frase para el prompt."""
     ultima = ficha.ultima
@@ -129,6 +180,7 @@ def _prompt_de_llamada(
     mision: MisionPendiente | None,
     llamada: Llamada | None = None,
     ficha: FichaPaciente | None = None,
+    procedimiento: str = "",
 ) -> str:
     """Compone el prompt del sistema del pipeline de esta llamada.
 
@@ -144,6 +196,9 @@ def _prompt_de_llamada(
             contacto.
         ficha: El historial del número, si ya llamó antes. Se añade tanto en
             entrantes como en misiones: es la memoria entre llamadas.
+        procedimiento: De qué se operó, si ya constaba antes de descolgar. Solo
+            para que Clara lo confirme en vez de preguntarlo de cero; la puerta
+            de cobertura no depende de este texto.
     """
     base = runtime.prompt.prompt_sistema_efectivo
     if mision is None:
@@ -160,6 +215,8 @@ def _prompt_de_llamada(
             fecha=ficha.ultima.momento[:10],
             detalle=_describir_ficha(ficha),
         )
+    if procedimiento:
+        prompt += PROMPT_PROCEDIMIENTO_CONOCIDO.format(procedimiento=procedimiento)
     return prompt
 
 
@@ -280,12 +337,15 @@ async def _conversar(
                     f"[historial] el {numero} ya llamó {ficha.total_llamadas} vez/veces; "
                     "el prompt lleva su ficha"
                 )
+    procedimiento = _sembrar_procedimiento(recursos, mision, ficha)
 
     contexto = LLMContext(
         messages=[
             {
                 "role": "system",
-                "content": _prompt_de_llamada(runtime, mision, llamada_actual, ficha),
+                "content": _prompt_de_llamada(
+                    runtime, mision, llamada_actual, ficha, procedimiento
+                ),
             }
         ],
         # Las mismas herramientas de la sala menos las de telefonía. Al pasarlas

@@ -41,6 +41,13 @@
   </table>
   {% endif %}
   {% include "panel/_campo.html" with campo=form.contacto_numero %}
+  {% include "panel/_campo.html" with campo=form.procedimiento %}
+  {# Sugerencias del <datalist> del procedimiento: los temas indexados ahora
+     mismo. Es HTML nativo, sin JavaScript, y sigue admitiendo texto libre —una
+     cirugía que el corpus no cubre tiene que poder escribirse. #}
+  <datalist id="temas-corpus">
+    {% for tema in form.temas_corpus %}<option value="{{ tema }}"></option>{% endfor %}
+  </datalist>
 
   <div class="acciones">
     <button class="principal" type="submit">Guardar</button>

@@ -30,10 +30,12 @@ import sys
 
 import voice_agent_core.board
 import voice_agent_core.calidad
+import voice_agent_core.cobertura
 import voice_agent_core.config
 import voice_agent_core.corpus
 import voice_agent_core.cron
 import voice_agent_core.estado
+import voice_agent_core.expediente
 import voice_agent_core.historial
 import voice_agent_core.limitador
 import voice_agent_core.misiones

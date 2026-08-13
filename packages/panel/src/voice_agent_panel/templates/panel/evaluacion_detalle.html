@@ -1,0 +1,104 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Llamada {{ e.id_llamada }}{% endblock %}
+{% block contenido %}
+<p><a href="{% url 'evaluaciones' %}{% if consulta %}?{{ consulta }}{% endif %}">← Evaluaciones</a></p>
+
+<h1>{{ e.momento|default:"Llamada sin fecha" }}</h1>
+<p class="pie">
+  {% if e.nivel %}<span class="triaje {{ e.nivel }}">{{ e.nivel }}</span>
+  {% else %}<span class="triaje sin">sin triaje</span>{% endif %}
+  {% if e.cobertura %}<span class="etiqueta {{ e.cobertura }}">{{ e.cobertura }}</span>{% endif %}
+  <span class="etiqueta">{% if e.direccion == "mision" %}misión saliente{% elif e.direccion == "sin_ficha" %}sin ficha{% else %}entrante{% endif %}</span>
+  {% if e.procedimiento %} · {{ e.procedimiento }}{% endif %}
+  <span class="ayuda"><code>{{ e.id_llamada }}</code></span>
+</p>
+
+{% if e.id_llamada == "sin-traza" %}
+<div class="aviso warning">Este identificador es el de relleno que se usa cuando
+  una llamada no llegó a abrir traza, así que puede estar compartido por varias
+  llamadas distintas y lo que se ve aquí sería la mezcla de todas.</div>
+{% endif %}
+
+<h2>Paciente</h2>
+{% if ficha %}
+<div class="tarjeta">
+  <p><strong>{{ ficha.numero }}</strong>{% if ficha.nombre %} — {{ ficha.nombre }}{% endif %}
+    <span class="ayuda">({{ ficha.total_llamadas }} llamada{{ ficha.total_llamadas|pluralize }} registrada{{ ficha.total_llamadas|pluralize }})</span></p>
+  <div class="acciones">
+    <a class="boton" href="{% url 'evaluaciones' %}?numero={{ ficha.numero|urlencode }}">Ver sus evaluaciones</a>
+  </div>
+</div>
+{% else %}
+<div class="aviso">Esta llamada no abrió ficha de paciente. Es lo esperado cuando
+  viene del navegador, de un número oculto o de una aplicación como WhatsApp:
+  esos identificadores no distinguen a nadie, y guardarlos mezclaría pacientes
+  distintos bajo una misma ficha, que es peor que no recordar.</div>
+{% endif %}
+
+<h2>Alertas de triaje</h2>
+{% for a in e.alertas %}
+<div class="tarjeta">
+  <p><strong>{{ a.momento }}</strong> — <span class="triaje {{ a.nivel }}">{{ a.nivel }}</span>
+    {% if a.procedimiento %}<span class="etiqueta">{{ a.procedimiento }}</span>{% endif %}
+    {% if a.cobertura %}<span class="etiqueta {{ a.cobertura }}">{{ a.cobertura }}</span>{% endif %}</p>
+  <p style="white-space:pre-wrap"><strong>Síntomas:</strong> {{ a.sintomas }}</p>
+  <p class="ayuda" style="white-space:pre-wrap">{{ a.justificacion }}</p>
+</div>
+{% empty %}
+<p class="ayuda">Ninguna: la llamada no llegó a un triaje registrado.</p>
+{% endfor %}
+
+<h2>Resumen de la llamada</h2>
+{% if e.resumen %}
+{% if e.es_respaldo %}
+<div class="aviso warning">Resumen de respaldo: la llamada terminó sin despedida
+  y lo escribió el sistema a partir de la transcripción, no el modelo al cerrar.</div>
+{% endif %}
+<div class="tarjeta">
+  <p><strong>{{ e.resumen.paciente_y_procedimiento }}</strong></p>
+  <p style="white-space:pre-wrap"><strong>Síntomas:</strong> {{ e.resumen.sintomas }}</p>
+  <p style="white-space:pre-wrap"><strong>Decisión:</strong> {{ e.resumen.decision }}</p>
+  <p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ e.resumen.proximos_pasos }}</p>
+  {% if e.resumen.referencias %}
+  <p style="white-space:pre-wrap"><strong>Referencias citadas:</strong> {{ e.resumen.referencias }}</p>
+  {% endif %}
+  {% if e.resumen.documentos_consultados %}
+  <p class="ayuda"><strong>Documentos consultados (traza real):</strong>
+    {{ e.resumen.documentos_consultados|join:" · " }}</p>
+  {% endif %}
+</div>
+{% if e.resumen.transcripcion %}
+<h2>Transcripción</h2>
+{% for turno in e.resumen.transcripcion %}
+<div class="turno herramienta">{{ turno }}</div>
+{% endfor %}
+{% endif %}
+{% else %}
+<div class="aviso warning">La llamada terminó sin resumen: puede haberse cortado
+  antes de que el modelo llamara a <code>finalizar_llamada</code>.</div>
+{% endif %}
+
+<h2>Traza documental</h2>
+{% for l in traza %}
+<div class="traza">
+  <p class="consulta">{{ l.consulta|default:"(sin consulta)" }}
+    <span class="ayuda">{{ l.momento }}{% if l.motivo %} · {{ l.motivo }}{% endif %}</span></p>
+  {% if l.pasajes %}
+  <table>
+    <tr><th>Origen</th><th>Tema</th><th>Distancia</th></tr>
+    {% for p in l.pasajes %}
+    <tr class="pasaje"><td>{{ p.origen }}</td><td>{{ p.tema }}</td><td>{{ p.distancia }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="ayuda">Sin pasajes: la consulta se hizo y el corpus no devolvió nada
+    dentro del umbral, lo que respalda un «no lo sé».</p>
+  {% endif %}
+</div>
+{% empty %}
+<p class="ayuda">Sin consultas al RAG. Puede ser que la puerta de cobertura no
+  dejara buscar —cuando la cirugía del paciente no está cubierta,
+  <code>buscar_en_documentos</code> ni llama al retriever—, que es un «no lo sé»
+  bien hecho y no un fallo.</p>
+{% endfor %}
+{% endblock %}

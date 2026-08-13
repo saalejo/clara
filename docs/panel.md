@@ -150,11 +150,23 @@ serializa a JSON, son ficheros de verdad en un volumen que los dos contenedores
 montan. Darle a *Desplegar* no hace que aparezcan; hace falta *Reindexar*.
 
 Reindexar reconcilia: añade lo nuevo, olvida lo borrado y elimina las colecciones
-de los temas que ya no existen. **El agente lo recoge en caliente**, sin
+de los temas que ya no existen. Lo que no ha cambiado **ni se abre** —se reconoce
+por su huella—, así que subir un documento cuesta lo que cuesta ese documento y
+no lo que cuesta el corpus entero, y una barra en la propia página cuenta por
+dónde va. **El agente lo recoge en caliente**, sin
 reiniciarse — el buscador relee la lista de colecciones en cada consulta, que en
 un SQLite local con un puñado de filas no cuesta nada. Es la única parte de la
 configuración que no necesita un reinicio, y es deliberado: reindexar no toca ni
 el prompt ni el historial ni el banco de muletillas.
+
+Cada tema lleva además un campo **Cómo lo llama la gente**: los nombres con los
+que un paciente diría esa cirugía, separados por comas. Es lo que hace que
+«me sacaron la vesícula» acabe en `colecistitis`, y lo que permite que un tema
+nuevo sea reconocible sin tocar código. **No entra en el índice**, así que no
+hace falta reindexar ni desplegar: se guarda en `data/config/alias_temas.json` y
+el agente lo relee en cada consulta, incluso a mitad de una llamada. Por qué
+importa —y por qué la puerta de cobertura no tiene interruptor— está en
+[rag.md](rag.md#cómo-llama-la-gente-a-cada-cirugía).
 
 Lo que el panel **no** puede hacer es borrar una colección de ChromaDB. No tiene
 chromadb ni puede tenerlo (ver [Por qué dos imágenes](#por-qué-dos-imágenes)), así
@@ -236,6 +248,87 @@ activa marcándolo en la lista, que guarda la selección del perfil en edición.
 > sobre *fragmentos*, no sobre frases. El texto llega troceado en tokens, así que
 > una regla que cruce el límite de un fragmento no casará nunca. Bufferizar la
 > respuesta entera costaría toda la latencia de generación.
+
+### Evaluaciones
+
+Es el expediente clínico del agente, y desde el 12 de agosto es **una llamada
+por fila**: filtrable, navegable y con una página de detalle por llamada.
+
+La lista es una **fusión externa completa** entre los dos sitios donde el agente
+deja lo que pasó, cruzados por `id_llamada`:
+
+| | De dónde sale | Qué aporta |
+|---|---|---|
+| JSON | `data/evaluaciones/{alertas,resumenes}/*.json` | síntomas, justificación, decisión, referencias, documentos consultados, cobertura |
+| SQLite | `data/evaluaciones/historial.sqlite3` | número, nombre, dirección de la llamada |
+
+**No es un `SELECT` del historial con adornos, y esa es la parte que importa.**
+`numero_identificable()` rechaza el número oculto y los rellenos de las llamadas
+de app, así que una llamada de navegador o de WhatsApp **no tiene fila** y solo
+existe como JSON; al revés, una que se cortó antes de que corriera ninguna
+herramienta tiene fila y no tiene JSON. Listar desde un solo lado perdería, en
+silencio, una mitad distinta cada vez. De ahí también el tercer valor del filtro
+de dirección, **«sin ficha»**: sin él, las entrantes más las misiones no sumarían
+el total y la página parecería rota.
+
+Se filtra por seis ejes que se combinan en Y, todos en la URL (`GET`, que es el
+único formulario de este tipo en el panel: un filtro tiene que sobrevivir a
+recargar y a compartir el enlace):
+
+* **fecha** (`desde`/`hasta`),
+* **triaje** (verde/amarillo/rojo),
+* **procedimiento** (la cirugía normalizada por la puerta de cobertura),
+* **cobertura** (cubierta/no_cubierta/desconocida/ambigua),
+* **dirección** (entrante/misión/sin ficha),
+* **paciente** (por número).
+
+Un filtro que no se entiende —un `nivel=azul` escrito a mano— **se ignora y se
+avisa**: la página sale igual. Devolver un 400 dejaría al jurado delante de una
+pantalla de error de Django.
+
+El filtro de fecha es el único que **poda antes de abrir nada**: el nombre del
+fichero es `%Y%m%d-%H%M%S.json`, así que sus ocho primeros caracteres deciden si
+se abre, y abrir es la mitad cara en la placa. Por eso la vista sin acotar tiene
+un tope (`TOPE_FICHEROS`), lo dice al pie —cuántos ficheros abrió— y empuja a
+acotar en vez de paginar. **No hay paginación a propósito:** no existe una clave
+común ordenada entre el directorio y el SQLite, así que la página 3 exigiría
+rehacer el mismo escaneo y la misma fusión que la 1 y tirar dos tercios; paginar
+no ahorraría trabajo, lo repetiría. Lo que hay es una escalera de tamaños de
+página y un «Ver más».
+
+Medido en la placa el 12 de agosto con los datos reales (15 llamadas, 18
+ficheros de evaluación): **8 ms** la fusión y 92 ms la petición HTTP entera.
+El tope está en 400 ficheros por carpeta, así que el peor caso sin acotar se
+queda en el orden de las décimas de segundo.
+
+La ventana de ficheros lleva **un día de holgura a cada lado**, y no es
+decorativo: el nombre del fichero lleva el instante en que se escribió el
+artefacto y el momento del expediente lleva el instante en que se montó la
+llamada, así que una llamada de las 23:58 deja su resumen en el fichero del día
+siguiente. Sin la holgura, filtrar por ese día perdería el resumen.
+
+Al entrar en una fila está **todo lo de esa llamada junto**: sus alertas en
+orden, el resumen completo (o el aviso de que se cortó antes de
+`finalizar_llamada`, o el de que es un resumen de respaldo), la ficha del
+paciente —o la explicación de por qué no la hay— y la **traza documental**, que
+es la prueba de trazabilidad que pide la rúbrica: qué se le preguntó al RAG y qué
+devolvió de verdad, con origen, tema y distancia. Una traza vacía también se
+explica: cuando la cirugía no está cubierta, `buscar_en_documentos` ni llama al
+retriever, y eso es un «no lo sé» bien hecho, no un fallo.
+
+Todo esto vive en `voice_agent_core.expediente`, no en las vistas: el cruce es
+lógica de dominio y se prueba sin Django (`tests/test_expediente.py`).
+
+### Pacientes
+
+El **padrón** de números que han llamado: número, nombre de la agenda, cuántas
+llamadas y cómo fue la última. Sale de `data/evaluaciones/historial.sqlite3` y el
+panel solo lee.
+
+Ya no repite las tarjetas de llamada —eso era lo que hacía que las dos páginas
+parecieran decir lo mismo—: cada ficha enlaza a **Evaluaciones ya filtrada por
+ese número**. Las llamadas de navegador, de número oculto o de aplicación no
+tienen ficha aquí, pero sí aparecen allí.
 
 ### Calidad
 
@@ -386,7 +479,29 @@ parece.
 
 La unidad ya **no lleva `--reset`**: desde que cada tema tiene su colección, la
 ingesta normal reconcilia y reconstruir desde cero solo hace falta al cambiar el
-modelo de embeddings o el troceado.
+modelo de embeddings.
+
+### La barra de avance
+
+La ingesta publica por dónde va en `<DATA_DIR>/ingesta/progreso.json` —el mismo
+canal por fichero que usan el estado de arranque del agente y el progreso de los
+lotes de Calidad— y la página lo consulta **una vez por segundo** mientras la
+unidad está viva. Se ve la fase, el documento que está procesando, cuántos van de
+cuántos y, sobre todo, **cuántos documentos no ha habido que tocar**: es la cifra
+que explica que reindexar 107 PDF pueda terminar en siete segundos (ver la
+huella, en [rag.md](rag.md)). Al terminar, la página se recarga sola, porque con
+la reindexación cambian también el veredicto del índice y los avisos de la
+portada.
+
+Es sondeo corto y no un `EventSource` como el de la página de Logs, y la
+diferencia no es de gusto: el log es un chorro sin final que hay que
+*transmitir*, mientras que esto es un retrato pequeño que se relee. Con SSE, una
+pestaña olvidada dejaría un hilo del panel ocupado toda la reindexación.
+
+La respuesta lleva **dos** cosas: lo que dice el fichero y si la unidad sigue
+viva según systemd. Hace falta lo segundo porque una ingesta que muera de golpe
+—sin memoria, por ejemplo— deja el fichero congelado a mitad y sin nadie que lo
+desmienta, y la barra se quedaría en el 40 % para siempre.
 
 > Reindexar mientras el agente conversa es la combinación que más cerca está de
 > quedarse sin memoria en esta placa: 2 GB del agente + 1 GB de la ingesta +

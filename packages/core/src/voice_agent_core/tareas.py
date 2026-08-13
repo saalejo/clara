@@ -73,6 +73,16 @@ class TareaProgramada(BaseModel):
             "hora del disparo no hay nadie con quien desambiguar la agenda."
         ),
     )
+    procedimiento: str = Field(
+        default="",
+        description=(
+            "De qué se operó el paciente. Es el dato que arma la puerta de "
+            "cobertura **antes del primer turno**: el agente solo consulta los "
+            "protocolos de esa cirugía, y si el corpus no la cubre no consulta "
+            "ninguno en vez de contestar con los de otra. Vacío deja que sea el "
+            "agente quien lo pregunte durante la llamada."
+        ),
+    )
 
     @field_validator("id")
     @classmethod

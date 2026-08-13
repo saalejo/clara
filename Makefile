@@ -74,8 +74,8 @@ reingest:  ## Reconstruye el índice desde cero
 	uv run python -m voice_agent.rag.ingest --reset
 
 .PHONY: ask
-ask:  ## Consulta el RAG por CLI sin voz.  Uso: make ask Q="tu pregunta"
-	uv run python -m voice_agent.rag.retriever "$(Q)"
+ask:  ## Consulta el RAG por CLI sin voz.  Uso: make ask Q="tu pregunta" [PROC="su cirugía"]
+	uv run python -m voice_agent.rag.retriever $(if $(PROC),--procedimiento "$(PROC)") "$(Q)"
 
 .PHONY: calidad
 calidad:  ## Ensaya escenarios de calidad adversarios.  Uso: make calidad [ESC="id1 id2"]

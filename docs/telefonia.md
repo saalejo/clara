@@ -781,8 +781,10 @@ módulo `voice_agent_core.historial`). El flujo completo:
   anota lo que haya.
 * Los números de relleno (WhatsApp `10000000`) y el número oculto **no abren
   ficha**: mezclarían pacientes distintos. Ver `numero_identificable`.
-* El modelo puede pedir más con la herramienta `historial_paciente`, y el
-  panel lo enseña en su página **Pacientes** (solo lectura).
+* El modelo puede pedir más con la herramienta `historial_paciente`. El panel
+  lo enseña en su página **Pacientes**, que es el padrón de números (solo
+  lectura); el expediente de cada llamada —alertas, resumen y traza— está en
+  **Evaluaciones**, a un clic desde cada ficha.
 
 Y una trampa nueva de las misiones, pagada con una llamada real: **el móvil
 abre el SCO en el instante de marcar** —por él viaja el tono de llamada—, así

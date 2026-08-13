@@ -8,6 +8,7 @@ corrupta degrada a "sin historial".
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -101,6 +102,85 @@ class TestElRegistro:
         assert "colecistectomía" in ficha.ultima.paciente_y_procedimiento
         primera = historial.llamadas(NUMERO)[-1]
         assert primera.nivel == ""  # la anotación no se desparramó
+
+    def test_el_procedimiento_se_guarda_aparte_de_la_prosa(self, tmp_path: Path) -> None:
+        """La cirugía sola es la que rearma la puerta cuando el número vuelve.
+
+        `paciente_y_procedimiento` mezcla nombre y operación en texto libre del
+        modelo y no se puede cruzar con los temas del corpus; `procedimiento` sí.
+        """
+        historial = historial_en(tmp_path)
+        registrar(historial)
+
+        historial.anotar_resumen(
+            "llamada-1",
+            paciente_y_procedimiento="Nora Restrepo, colecistectomía hace 5 días",
+            decision="Triaje verde",
+            proximos_pasos="Seguir igual",
+            procedimiento="me sacaron la vesícula",
+        )
+
+        ficha = historial.ficha(NUMERO)
+        assert ficha is not None
+        assert ficha.ultima.procedimiento == "me sacaron la vesícula"
+
+    def test_un_resumen_sin_procedimiento_no_borra_el_que_ya_constaba(self, tmp_path: Path) -> None:
+        """Misma regla que el nivel: una llamada cortada no borra lo sabido."""
+        historial = historial_en(tmp_path)
+        registrar(historial)
+        historial.anotar_resumen(
+            "llamada-1",
+            paciente_y_procedimiento="Nora, colecistectomía",
+            decision="",
+            proximos_pasos="",
+            procedimiento="me sacaron la vesícula",
+        )
+
+        historial.anotar_resumen(
+            "llamada-1",
+            paciente_y_procedimiento="No registrado: la llamada terminó sin despedida.",
+            decision="",
+            proximos_pasos="",
+        )
+
+        ficha = historial.ficha(NUMERO)
+        assert ficha is not None
+        assert ficha.ultima.procedimiento == "me sacaron la vesícula"
+
+    def test_una_base_del_esquema_anterior_se_migra_sola(self, tmp_path: Path) -> None:
+        """La base de la placa lleva meses con llamadas dentro.
+
+        `_ESQUEMA` es todo `CREATE TABLE IF NOT EXISTS`, así que sobre una base
+        ya creada no ejecuta nada: sin la migración explícita, la columna nueva
+        no existiría y cada anotación fallaría con `no such column` — tragado
+        por el `except` de la casa, es decir, en silencio.
+        """
+        ruta = tmp_path / "historial.sqlite3"
+        with sqlite3.connect(ruta) as vieja:
+            vieja.executescript(
+                "CREATE TABLE llamadas (id_llamada TEXT PRIMARY KEY, numero TEXT NOT NULL, "
+                "momento TEXT NOT NULL, direccion TEXT NOT NULL, nivel TEXT NOT NULL DEFAULT '', "
+                "paciente_y_procedimiento TEXT NOT NULL DEFAULT '', "
+                "decision TEXT NOT NULL DEFAULT '', proximos_pasos TEXT NOT NULL DEFAULT '');"
+                "CREATE TABLE pacientes (numero TEXT PRIMARY KEY, nombre TEXT NOT NULL DEFAULT '',"
+                " actualizado_en TEXT NOT NULL);"
+                "INSERT INTO pacientes VALUES ('3046411802', 'Nora', '2026-08-01T10:00:00');"
+                "INSERT INTO llamadas (id_llamada, numero, momento, direccion) "
+                "VALUES ('vieja-1', '3046411802', '2026-08-01T10:00:00', 'entrante');"
+            )
+
+        historial = HistorialPacientes(ruta)
+        historial.anotar_resumen(
+            "vieja-1",
+            paciente_y_procedimiento="Nora, apendicectomía",
+            decision="Triaje verde",
+            proximos_pasos="Seguir igual",
+            procedimiento="me operaron del apéndice",
+        )
+
+        ficha = historial.ficha(NUMERO)
+        assert ficha is not None, "la llamada de antes de la migración se perdió"
+        assert ficha.ultima.procedimiento == "me operaron del apéndice"
 
     def test_anotar_sin_ficha_no_hace_nada_ni_lanza(self, tmp_path: Path) -> None:
         # El caso del navegador: alertas con id pero sin llamada registrada.
@@ -271,3 +351,159 @@ class TestLaHerramientaDeConsulta:
         (anterior,) = params.resultado["llamadas"]
         assert anterior["triaje"] == "amarillo"
         assert anterior["tipo"] == "llamada que hicimos nosotros"
+
+
+class TestLaBusquedaDeLlamadas:
+    """Los filtros que empuja el panel a SQL: número, dirección y fechas.
+
+    Solo esos tres, y a propósito: el triaje y el procedimiento también constan
+    en los JSON de la evaluación, así que filtrarlos aquí escondería una llamada
+    cuya anotación se hubiera perdido bajo el `except` de la casa.
+    """
+
+    def test_sin_filtros_las_devuelve_todas(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1")
+        registrar(historial, "l2", numero="3004445566")
+
+        assert len(historial.buscar_llamadas()) == 2
+
+    def test_por_numero(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1")
+        registrar(historial, "l2", numero="3004445566")
+
+        assert [ll.id_llamada for ll in historial.buscar_llamadas(numero=NUMERO)] == ["l1"]
+
+    def test_por_direccion(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "entrante-1")
+        historial.registrar_llamada("mision-1", NUMERO, "mision")
+
+        encontradas = historial.buscar_llamadas(direccion="mision")
+
+        assert [ll.id_llamada for ll in encontradas] == ["mision-1"]
+
+    def test_por_rango_de_fechas_comparando_cadenas(self, tmp_path: Path) -> None:
+        """El momento es ISO naive de ancho fijo: basta con el día como prefijo."""
+        historial = historial_en(tmp_path)
+        registrar(historial, "vieja", momento=datetime(2026, 8, 1, 10, 0))
+        registrar(historial, "nueva", momento=datetime(2026, 8, 9, 23, 50))
+
+        encontradas = historial.buscar_llamadas(desde="2026-08-09", hasta_exclusivo="2026-08-10")
+
+        assert [ll.id_llamada for ll in encontradas] == ["nueva"]
+
+    def test_respeta_el_limite(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        for i in range(5):
+            registrar(historial, f"l{i}", momento=datetime(2026, 8, 9, 10, i))
+
+        assert len(historial.buscar_llamadas(limite=2)) == 2
+
+    def test_una_base_ilegible_degrada_a_vacio(self, tmp_path: Path) -> None:
+        ruta = tmp_path / "historial.sqlite3"
+        ruta.write_text("esto no es una base de datos", encoding="utf-8")
+
+        assert HistorialPacientes(ruta).buscar_llamadas() == []
+
+
+class TestLaFilaPorId:
+    def test_devuelve_la_llamada(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1")
+
+        fila = historial.llamada("l1")
+
+        assert fila is not None
+        assert fila.numero == NUMERO
+
+    def test_un_id_desconocido_es_none(self, tmp_path: Path) -> None:
+        assert historial_en(tmp_path).llamada("no-existe") is None
+
+
+class TestElListadoDePacientes:
+    """El padrón, que ahora sale en una sola consulta en vez de una por ficha."""
+
+    def test_varios_pacientes_en_una_pasada(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1", momento=datetime(2026, 8, 9, 10, 0))
+        registrar(historial, "l2", momento=datetime(2026, 8, 9, 11, 0))
+        registrar(historial, "otro", numero="3004445566", momento=datetime(2026, 8, 9, 12, 0))
+
+        fichas = historial.pacientes()
+
+        assert [(f.numero, f.total_llamadas) for f in fichas] == [
+            ("3004445566", 1),
+            (NUMERO, 2),
+        ], "ordenadas por la última vez que se vieron, la más reciente primero"
+
+    def test_la_ultima_es_la_mas_reciente(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "vieja", momento=datetime(2026, 8, 1, 10, 0))
+        registrar(historial, "nueva", momento=datetime(2026, 8, 9, 10, 0))
+        historial.anotar_alerta("nueva", "rojo")
+
+        (ficha,) = historial.pacientes()
+
+        assert ficha.ultima.id_llamada == "nueva"
+        assert ficha.ultima.nivel == "rojo"
+
+    def test_conserva_el_nombre_y_el_procedimiento(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1", nombre="Nora")
+        historial.anotar_resumen(
+            "l1",
+            paciente_y_procedimiento="Nora, cataratas",
+            decision="Seguir en casa.",
+            proximos_pasos="Llamar si empeora.",
+            procedimiento="cataratas",
+        )
+
+        (ficha,) = historial.pacientes()
+
+        assert ficha.nombre == "Nora"
+        assert ficha.ultima.procedimiento == "cataratas"
+
+    def test_un_numero_sin_llamadas_no_produce_ficha(self, tmp_path: Path) -> None:
+        """Es la regla que ya tenía `ficha()`, y el JOIN la conserva."""
+        historial = historial_en(tmp_path)
+        with sqlite3.connect(tmp_path / "historial.sqlite3") as conexion:
+            conexion.executescript(
+                "CREATE TABLE IF NOT EXISTS pacientes (numero TEXT PRIMARY KEY, "
+                "nombre TEXT NOT NULL DEFAULT '', actualizado_en TEXT NOT NULL);"
+            )
+            conexion.execute(
+                "INSERT INTO pacientes VALUES (?, ?, ?)", (NUMERO, "Nora", "2026-08-09T10:00:00")
+            )
+
+        assert historial.pacientes() == []
+
+    def test_una_base_ilegible_degrada_a_vacio(self, tmp_path: Path) -> None:
+        ruta = tmp_path / "historial.sqlite3"
+        ruta.write_text("esto no es una base de datos", encoding="utf-8")
+
+        assert HistorialPacientes(ruta).pacientes() == []
+
+
+class TestLosVocabulariosDelFiltro:
+    def test_los_procedimientos_distintos(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        for i, procedimiento in enumerate(("cataratas", "cataratas", "apendicitis", "")):
+            registrar(historial, f"l{i}", momento=datetime(2026, 8, 9, 10, i))
+            historial.anotar_resumen(
+                f"l{i}",
+                paciente_y_procedimiento="",
+                decision="",
+                proximos_pasos="",
+                procedimiento=procedimiento,
+            )
+
+        assert historial.procedimientos() == ["apendicitis", "cataratas"]
+
+    def test_los_nombres_por_numero(self, tmp_path: Path) -> None:
+        historial = historial_en(tmp_path)
+        registrar(historial, "l1", nombre="Nora")
+        registrar(historial, "l2", numero="3004445566")
+
+        assert historial.nombres() == {NUMERO: "Nora", "3004445566": ""}

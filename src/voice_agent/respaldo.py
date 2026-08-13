@@ -60,6 +60,12 @@ def resumen_de_respaldo(recursos: AppResources, contexto: LLMContext) -> None:
             paciente_y_procedimiento=(
                 "No registrado: la llamada terminó sin despedida. Ver transcripción."
             ),
+            # La cirugía sí puede constar aunque el modelo no llegara a
+            # redactar nada: la trae el evento de llamada o la dijo el paciente
+            # en el primer turno, y es lo que rearma la puerta si vuelve a
+            # llamar. Vacía si la llamada se cortó antes de saberla.
+            procedimiento=recursos.cirugia_paciente,
+            cobertura=alerta.cobertura if alerta else "",
             sintomas=alerta.sintomas if alerta else "Ver transcripción.",
             decision=(
                 f"Triaje {alerta.nivel} registrado como alerta ({alerta.justificacion})"
@@ -86,6 +92,7 @@ def resumen_de_respaldo(recursos: AppResources, contexto: LLMContext) -> None:
                 decision=resumen.decision,
                 proximos_pasos=resumen.proximos_pasos,
                 nivel=resumen.nivel,
+                procedimiento=resumen.procedimiento,
             )
         logger.info(f"Resumen de respaldo persistido: {ruta.name}")
     except Exception:

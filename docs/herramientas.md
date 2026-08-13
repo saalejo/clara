@@ -70,19 +70,19 @@ Pipecat 1.x deduce el esquema JSON que se le manda al modelo a partir de la
 esquema a mano ni mantenerlo sincronizado con el código.
 
 ```python
-async def buscar_en_documentos(params: FunctionCallParams, consulta: str) -> None:
-    """Busca información en la base de conocimiento del agente.
+async def buscar_en_documentos(
+    params: FunctionCallParams, consulta: str, cirugia_del_paciente: str
+) -> None:
+    """Busca en las guías y protocolos clínicos de la base de conocimiento.
 
-    Úsala siempre que te pregunten por algo que pueda estar documentado: la
-    placa NanoPi, cómo funciona este agente, su configuración...
+    Úsala SIEMPRE antes de responder cualquier pregunta clínica...
 
     Args:
-        consulta: La pregunta o los términos a buscar, en español y con
-            palabras completas.
+        consulta: Términos clave de búsqueda, NO una pregunta completa...
+        cirugia_del_paciente: De qué operaron al paciente, con las MISMAS
+            palabras que usó él... Si todavía no te lo ha dicho, escribe
+            exactamente "desconocida".
     """
-    recursos: AppResources = params.app_resources
-    contexto = recursos.retriever.buscar_como_texto(consulta)
-    await params.result_callback({"resultados": contexto})
 ```
 
 De ahí sale exactamente esto:
@@ -90,16 +90,25 @@ De ahí sale exactamente esto:
 ```json
 {
   "name": "buscar_en_documentos",
-  "description": "Busca información en la base de conocimiento del agente.\n\nÚsala siempre que...",
+  "description": "Busca en las guías y protocolos clínicos de la base de conocimiento.\n\nÚsala SIEMPRE...",
   "parameters": {
     "type": "object",
     "properties": {
-      "consulta": {"type": "string", "description": "La pregunta o los términos a buscar..."}
+      "consulta": {"type": "string", "description": "Términos clave de búsqueda..."},
+      "cirugia_del_paciente": {"type": "string", "description": "De qué operaron al paciente..."}
     },
-    "required": ["consulta"]
+    "required": ["consulta", "cirugia_del_paciente"]
   }
 }
 ```
+
+Que `cirugia_del_paciente` **no tenga valor por defecto** no es un descuido: es
+lo que lo mete en `required`. Un argumento opcional el modelo lo omite; uno
+obligatorio lo rellena aunque sea con basura, y la basura cae en el estado
+permisivo (`"desconocida"`), no en el que da extractos. Si dejara de ser
+obligatorio, la puerta de cobertura se quedaría ciega — fallando **abierta**,
+que es el modo catastrófico. Lo vigila `tests/test_tools.py`, y el porqué de la
+puerta está en [`rag.md`](rag.md).
 
 Tres reglas que hay que respetar:
 

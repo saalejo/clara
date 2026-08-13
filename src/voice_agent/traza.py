@@ -55,7 +55,7 @@ class TrazaLlamada:
         """Los orígenes distintos que respaldaron respuestas, en orden de uso."""
         return list(dict.fromkeys(self._origenes))
 
-    def registrar(self, consulta: str, pasajes: Sequence[Pasaje]) -> None:
+    def registrar(self, consulta: str, pasajes: Sequence[Pasaje], *, motivo: str = "") -> None:
         """Anota una consulta al RAG y lo que devolvió.
 
         Nunca lanza: la traza es una obligación del sistema, no del paciente.
@@ -67,9 +67,15 @@ class TrazaLlamada:
             pasajes: Los pasajes que el RAG devolvió (puede ser vacío: una
                 consulta sin resultados también es traza, porque respalda un
                 "no lo sé").
+            motivo: En qué estado de cobertura se hizo la consulta, o por qué
+                no se llegó a hacer. Sin esto, dos líneas con cero pasajes son
+                indistinguibles y significan cosas opuestas: que el corpus no
+                cubre esa cirugía —y por eso nadie buscó— o que sí la cubre
+                pero no dice nada de eso. Y una línea con pasajes no diría de
+                qué cirugía salieron. Vacío no ocupa sitio en la línea.
         """
         self._origenes.extend(p.origen for p in pasajes)
-        linea = {
+        linea: dict[str, object] = {
             "momento": datetime.now().isoformat(timespec="seconds"),
             "consulta": consulta,
             "pasajes": [
@@ -77,6 +83,8 @@ class TrazaLlamada:
                 for p in pasajes
             ],
         }
+        if motivo:
+            linea["motivo"] = motivo
         try:
             self._ruta.parent.mkdir(parents=True, exist_ok=True)
             with self._ruta.open("a", encoding="utf-8") as f:

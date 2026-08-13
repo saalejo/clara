@@ -321,7 +321,8 @@ La reindexación es una unidad de un solo uso con la imagen del **agente**, que 
 la que tiene chromadb y fastembed:
 
 ```bash
-systemctl --user start voice-agent-ingest     # ~100 s con el corpus de ejemplo
+# 7 s si no ha cambiado nada; con el corpus clínico entero por primera vez, minutos
+systemctl --user start voice-agent-ingest
 ```
 
 Al ser `Type=oneshot`, `start` **espera** a que termine. Quadlet añade

@@ -24,20 +24,37 @@ from voice_agent_core.corpus import TEMA_RAIZ
 
 
 class ColeccionFalsa:
-    """Doble de una colección: guarda ids y recuerda lo que le borran."""
+    """Doble de una colección: guarda ids y recuerda lo que le hacen.
+
+    Cuenta los `upsert` porque son los que cuestan embeddings: media batería de
+    estos tests comprueba justamente que no ocurran.
+    """
 
     def __init__(self, name: str) -> None:
         self.name = name
         self.ids: set[str] = set()
         self.metadatos: dict[str, dict[str, Any]] = {}
+        self.upserts = 0
+        self.updates = 0
 
     def upsert(self, *, ids: list[str], documents: list[str], metadatas: list[Any]) -> None:
+        self.upserts += 1
         self.ids.update(ids)
         for identificador, meta in zip(ids, metadatas, strict=True):
             self.metadatos[identificador] = meta
 
+    def update(self, *, ids: list[str], metadatas: list[Any]) -> None:
+        """Remienda metadatos sin tocar embeddings, como el `update` de Chroma."""
+        self.updates += 1
+        for identificador, meta in zip(ids, metadatas, strict=True):
+            self.metadatos[identificador] = meta
+
     def get(self, *, include: Any = None) -> dict[str, Any]:
-        return {"ids": sorted(self.ids)}
+        ids = sorted(self.ids)
+        datos: dict[str, Any] = {"ids": ids}
+        if include and "metadatas" in include:
+            datos["metadatas"] = [self.metadatos.get(i, {}) for i in ids]
+        return datos
 
     def delete(self, *, ids: list[str]) -> None:
         self.ids.difference_update(ids)
@@ -98,6 +115,25 @@ def _documento(settings: Settings, tema: str, nombre: str, texto: str) -> None:
     if tema != TEMA_RAIZ and not (settings.corpus_dir / tema).is_dir():
         corpus.crear_tema(settings.corpus_dir, tema)
     corpus.guardar_documento(settings.corpus_dir, tema, nombre, [texto.encode()])
+
+
+class ContadorDeLecturas:
+    """Cuenta qué documentos abre la ingesta.
+
+    Es la medida que importa: en esta placa, extraer el texto de un PDF y
+    trocearlo cuesta más que vectorizarlo, y antes de las huellas se hacía
+    siempre —para todos los documentos, en todas las pasadas—.
+    """
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.leidos: list[str] = []
+        original = ingest.leer_documento
+
+        def espia(ruta: Path) -> str:
+            self.leidos.append(ruta.name)
+            return original(ruta)
+
+        monkeypatch.setattr(ingest, "leer_documento", espia)
 
 
 # --- Reparto por temas -------------------------------------------------------
@@ -188,6 +224,109 @@ def test_un_tema_vacio_no_gasta_una_coleccion(settings: Settings, cliente: Clien
     ingest.ingerir(settings)
 
     assert "conocimiento__vacio" not in cliente.colecciones
+
+
+# --- Lo que no se vuelve a procesar ------------------------------------------
+
+
+def test_un_documento_sin_cambios_no_se_vuelve_a_abrir(
+    settings: Settings, cliente: ClienteFalso, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El motivo de existir de las huellas.
+
+    Con el corpus clínico, la pasada anterior tardaba cerca de una hora sin
+    cambios porque para saber si un fragmento ya estaba había que extraer el
+    texto del PDF y trocearlo.
+    """
+    _documento(settings, "la-placa", "cpu.md", "# CPU\n\nSeis núcleos.")
+    ingest.ingerir(settings)
+
+    contador = ContadorDeLecturas(monkeypatch)
+    coleccion = cliente.colecciones["conocimiento__la-placa"]
+    coleccion.upserts = 0
+    ingest.ingerir(settings)
+
+    assert contador.leidos == []
+    assert coleccion.upserts == 0
+
+
+def test_solo_se_relee_el_documento_que_cambia(
+    settings: Settings, cliente: ClienteFalso, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _documento(settings, "la-placa", "cpu.md", "# CPU\n\nSeis núcleos.")
+    _documento(settings, "la-placa", "ram.md", "# RAM\n\nCuatro gigas.")
+    ingest.ingerir(settings)
+
+    (settings.corpus_dir / "la-placa" / "ram.md").write_text("# RAM\n\nCuatro gigas LPDDR4.")
+    contador = ContadorDeLecturas(monkeypatch)
+    ingest.ingerir(settings)
+
+    assert contador.leidos == ["ram.md"]
+
+
+def test_cambiar_el_troceado_reprocesa_el_corpus_entero(
+    settings: Settings, cliente: ClienteFalso, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La receta entra en la huella, así que no hace falta acordarse de `--reset`."""
+    _documento(settings, "la-placa", "cpu.md", "# CPU\n\nSeis núcleos.")
+    ingest.ingerir(settings)
+
+    otro = settings.model_copy(update={"chunk_size": settings.chunk_size // 2})
+    contador = ContadorDeLecturas(monkeypatch)
+    ingest.ingerir(otro)
+
+    assert contador.leidos == ["cpu.md"]
+
+
+def test_un_indice_sin_huellas_se_remienda_sin_vectorizar(
+    settings: Settings, cliente: ClienteFalso, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El índice que ya está en la placa no lleva huellas: hay que adoptarlo.
+
+    La primera pasada lo relee —no hay forma de calcular los identificadores sin
+    leerlo— pero le pone la huella con `update`, que no recalcula embeddings. La
+    siguiente ya se lo salta entero.
+    """
+    _documento(settings, "la-placa", "cpu.md", "# CPU\n\nSeis núcleos.")
+    ingest.ingerir(settings)
+    coleccion = cliente.colecciones["conocimiento__la-placa"]
+    for meta in coleccion.metadatos.values():
+        meta.pop("huella", None)
+        meta.pop("fragmentos", None)
+    coleccion.upserts = 0
+    coleccion.updates = 0
+
+    ingest.ingerir(settings)
+
+    assert coleccion.upserts == 0, "no debería recalcular ni un embedding"
+    assert coleccion.updates == 1
+    assert all(m["huella"] for m in coleccion.metadatos.values())
+
+    contador = ContadorDeLecturas(monkeypatch)
+    ingest.ingerir(settings)
+    assert contador.leidos == []
+
+
+def test_una_pasada_interrumpida_se_completa(
+    settings: Settings, cliente: ClienteFalso, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La huella cuadra pero el documento está a medias: hay que releerlo.
+
+    Es lo que deja una ingesta que muere en mitad de un documento largo, y
+    fiarse solo de la huella lo dejaría cojo para siempre.
+    """
+    _documento(settings, "la-placa", "guia.md", "# Guía\n\n" + "Párrafo. " * 400)
+    ingest.ingerir(settings)
+    coleccion = cliente.colecciones["conocimiento__la-placa"]
+    completo = set(coleccion.ids)
+    assert len(completo) > 1
+    coleccion.ids.discard(sorted(completo)[0])
+
+    contador = ContadorDeLecturas(monkeypatch)
+    ingest.ingerir(settings)
+
+    assert contador.leidos == ["guia.md"]
+    assert coleccion.ids == completo
 
 
 # --- Casos límite ------------------------------------------------------------

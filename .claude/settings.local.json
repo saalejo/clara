@@ -3,7 +3,20 @@
     "allow": [
       "Bash(ssh nanopi *)",
       "mcp__plugin_cloudflare_cloudflare-api__execute",
-      "Bash(scp -q /tmp/claude-1000/-home-ember-Documentos-git-clara/f643a8e5-bd34-4450-9500-019a4028ade7/scratchpad/prueba_turn.py nanopi:/tmp/prueba_turn.py)"
+      "Bash(scp -q /tmp/claude-1000/-home-ember-Documentos-git-clara/f643a8e5-bd34-4450-9500-019a4028ade7/scratchpad/prueba_turn.py nanopi:/tmp/prueba_turn.py)",
+      "Bash(rsync -av --relative packages/panel/src/voice_agent_panel/templates/panel/portal.html packages/panel/src/voice_agent_panel/static/panel/portal.css packages/panel/src/voice_agent_panel/static/panel/clara-retrato.svg nanopi:clara/)",
+      "Bash(python3 -)",
+      "Bash(python3 -m py_compile packages/core/src/voice_agent_core/expediente.py)",
+      "Bash(google-chrome --headless --disable-gpu --screenshot=../verificacion.png --window-size=1280,860 --hide-scrollbars portal.html)",
+      "Bash(python3 -m py_compile packages/panel/src/voice_agent_panel/views.py)",
+      "Bash(mkdir *)",
+      "Bash(rsync -avc --relative packages/panel/src/voice_agent_panel/templates/panel/portal.html packages/panel/src/voice_agent_panel/static/panel/portal.css packages/panel/src/voice_agent_panel/static/panel/clara-retrato.svg nanopi:clara/)",
+      "Bash(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -T git@github.com)",
+      "Read(//home/ember/.ssh/**)",
+      "Bash(command -v gh)",
+      "Bash(gh auth *)",
+      "Bash(git ls-remote *)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

@@ -1,44 +1,36 @@
 {% extends "panel/base.html" %}
+{% block titulo %}Historial de pacientes{% endblock %}
 {% block contenido %}
 <h1>Historial de pacientes</h1>
-<p class="pie">La memoria del agente entre llamadas, por número de teléfono:
-  el agente registra cada llamada identificada al descolgar (o al marcar una
-  misión) y le anota el triaje y el resumen según los guarda. Es lo que le
-  permite saludar con continuidad a quien ya llamó. Vive en
-  <code>data/evaluaciones/historial.sqlite3</code>; el panel solo lee. Las
-  llamadas de navegador y las de número oculto o de aplicación no tienen
-  ficha.</p>
+<p class="pie">El padrón de números que han llamado: la memoria del agente entre
+  llamadas. El agente registra cada llamada identificada al descolgar (o al
+  marcar una misión) y le anota el triaje y el resumen según los guarda; es lo
+  que le permite saludar con continuidad a quien ya llamó. Vive en
+  <code>data/evaluaciones/historial.sqlite3</code>; el panel solo lee. El
+  expediente de cada llamada no se repite aquí: está en
+  <a href="{% url 'evaluaciones' %}">Evaluaciones</a>, a un clic desde cada
+  ficha. Las llamadas de navegador y las de número oculto o de aplicación no
+  tienen ficha, pero sí aparecen allí.</p>
 
-<h2>Pacientes</h2>
 {% for f in fichas %}
 <div class="tarjeta">
   <p><strong>{{ f.numero }}</strong>{% if f.nombre %} — {{ f.nombre }}{% endif %}
     <span class="ayuda">({{ f.total_llamadas }} llamada{{ f.total_llamadas|pluralize }})</span></p>
   <p class="ayuda">Última: {{ f.ultima.momento }}
-    {% if f.ultima.nivel %} <span class="triaje {{ f.ultima.nivel }}">{{ f.ultima.nivel }}</span>{% endif %}</p>
+    {% if f.ultima.nivel %} <span class="triaje {{ f.ultima.nivel }}">{{ f.ultima.nivel }}</span>{% endif %}
+    {% if f.ultima.procedimiento %} · {{ f.ultima.procedimiento }}{% endif %}</p>
   {% if f.ultima.paciente_y_procedimiento %}
   <p style="white-space:pre-wrap">{{ f.ultima.paciente_y_procedimiento }}</p>
   {% endif %}
   {% if f.ultima.proximos_pasos %}
   <p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ f.ultima.proximos_pasos }}</p>
   {% endif %}
+  <div class="acciones">
+    <a class="boton" href="{% url 'evaluaciones' %}?numero={{ f.numero|urlencode }}">Ver sus {{ f.total_llamadas }} evaluación{{ f.total_llamadas|pluralize:"es" }}</a>
+    <a class="boton" href="{% url 'evaluacion_detalle' f.ultima.id_llamada %}">Última llamada</a>
+  </div>
 </div>
 {% empty %}
 <p class="ayuda">Ninguno todavía: ningún número identificado ha llamado.</p>
-{% endfor %}
-
-<h2>Llamadas registradas</h2>
-{% for ll in llamadas %}
-<div class="tarjeta">
-  <p><strong>{{ ll.momento }}</strong> — {{ ll.numero }}
-    <span class="ayuda">({% if ll.direccion == "mision" %}misión saliente{% else %}entrante{% endif %},
-      {{ ll.id_llamada }})</span></p>
-  <p>{% if ll.nivel %}<span class="triaje {{ ll.nivel }}">{{ ll.nivel }}</span>
-    {% else %}<span class="triaje sin">sin triaje</span>{% endif %}</p>
-  {% if ll.decision %}<p style="white-space:pre-wrap"><strong>Decisión:</strong> {{ ll.decision }}</p>{% endif %}
-  {% if ll.proximos_pasos %}<p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ ll.proximos_pasos }}</p>{% endif %}
-</div>
-{% empty %}
-<p class="ayuda">Ninguna todavía.</p>
 {% endfor %}
 {% endblock %}

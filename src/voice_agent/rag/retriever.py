@@ -33,19 +33,23 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from chromadb.api.models.Collection import Collection
 from loguru import logger
 
 from voice_agent.logging import setup_logging
+from voice_agent.rag.embeddings import cargar_modelo
 from voice_agent.rag.store import (
     abrir_cliente,
     abrir_coleccion,
     funcion_embeddings,
     temas_indexados,
 )
+from voice_agent_core.cobertura import Cobertura, cargar_alias, frase_temas, resolver_cirugia
 from voice_agent_core.config import Settings, get_settings
+from voice_agent_core.corpus import TEMA_RAIZ
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,11 @@ class Retriever:
         settings.apply_model_cache_env()
         self._cliente = abrir_cliente(settings)
         self._embeddings = funcion_embeddings(settings.embedding_model)
+        # La carga del modelo se pide **aquí y a propósito**: la función de
+        # embeddings lo carga en el primer uso (ver su `__init__`), y sin este
+        # empujón los diez y pico segundos de ONNX se los comería la primera
+        # pregunta del paciente en vez del arranque del agente.
+        cargar_modelo(settings.embedding_model)
         self._abiertas: dict[str, Collection] = {}
 
         temas = temas_indexados(settings, self._cliente)
@@ -147,13 +156,26 @@ class Retriever:
         """
         return sorted(self._colecciones().keys())
 
-    def buscar(self, consulta: str, *, top_k: int | None = None) -> list[Pasaje]:
+    def buscar(
+        self,
+        consulta: str,
+        *,
+        top_k: int | None = None,
+        temas: Sequence[str] | None = None,
+    ) -> list[Pasaje]:
         """Recupera los fragmentos más parecidos a la consulta.
 
         Args:
             consulta: Pregunta en lenguaje natural.
             top_k: Cuántos fragmentos devolver como máximo. Si es None se usa
                 el valor de la configuración.
+            temas: Si se pasa, **solo** se consultan esos temas. Es lo que
+                impide que un fragmento de otra cirugía se disfrace de
+                respuesta: el umbral de distancia mide parecido con la
+                consulta, no pertenencia a una cirugía, y una pregunta
+                postoperatoria genérica se parece al texto postoperatorio de
+                cualquier documento clínico (ver el módulo `cobertura`).
+                `None` busca en todos, que es el comportamiento de siempre.
 
         Returns:
             Los pasajes que superan el umbral de distancia, del más al menos
@@ -168,6 +190,22 @@ class Retriever:
         if not colecciones:
             logger.warning("La base de conocimiento está vacía; ejecuta `make ingest`.")
             return []
+
+        if temas is not None:
+            permitidos = set(temas)
+            # Diccionario nuevo: `_colecciones()` devuelve el suyo por
+            # referencia, y filtrarlo en sitio dejaría al retriever sin temas
+            # para la siguiente búsqueda.
+            colecciones = {t: c for t, c in colecciones.items() if t in permitidos}
+            if not colecciones:
+                # Y aquí NUNCA un `else` que caiga a todas las colecciones:
+                # ese fallback es exactamente el fallo que este parámetro
+                # existe para impedir. Se devuelve vacío antes incluso de
+                # vectorizar, que además ahorra el embedding.
+                logger.info(
+                    f"RAG restringido a {sorted(permitidos)}: ningún tema indexado coincide."
+                )
+                return []
 
         # Una sola vez, y se reutiliza en todas las colecciones. `embed_query`
         # y no `__call__` porque algunos modelos esperan un prefijo distinto
@@ -215,7 +253,13 @@ class Retriever:
         )
         return pasajes
 
-    def buscar_como_texto(self, consulta: str, *, top_k: int | None = None) -> str:
+    def buscar_como_texto(
+        self,
+        consulta: str,
+        *,
+        top_k: int | None = None,
+        temas: Sequence[str] | None = None,
+    ) -> str:
         """Recupera pasajes y los formatea para inyectarlos en el contexto del LLM.
 
         El formato numera los pasajes y nombra su origen, de modo que el modelo
@@ -226,13 +270,14 @@ class Retriever:
         Args:
             consulta: Pregunta en lenguaje natural.
             top_k: Máximo de pasajes a incluir.
+            temas: Restringe la búsqueda a esos temas. Ver `buscar`.
 
         Returns:
             El texto listo para el modelo, o un mensaje explícito de "no hay
             nada" —nunca una cadena vacía, que el modelo interpretaría como un
             fallo de la herramienta en vez de como una ausencia de datos.
         """
-        pasajes = self.buscar(consulta, top_k=top_k)
+        pasajes = self.buscar(consulta, top_k=top_k, temas=temas)
         if not pasajes:
             return (
                 "La base de conocimiento no contiene información relevante para esa consulta. "
@@ -255,6 +300,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Consulta la base de conocimiento del agente.")
     parser.add_argument("consulta", nargs="+", help="La pregunta a buscar.")
     parser.add_argument("-k", "--top-k", type=int, default=None, help="Número de pasajes.")
+    parser.add_argument(
+        "-p",
+        "--procedimiento",
+        default=None,
+        help="De qué operaron al paciente. Aplica la puerta de cobertura, igual que en una llamada.",
+    )
+    parser.add_argument(
+        "-t",
+        "--tema",
+        action="append",
+        default=None,
+        help="Restringe a este tema. Repetible. Salta la puerta: es para depurar el índice.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -267,7 +325,32 @@ def main() -> int:
         return 1
 
     consulta = " ".join(args.consulta)
-    pasajes = retriever.buscar(consulta, top_k=args.top_k)
+    temas: list[str] | None = args.tema
+
+    # La puerta, tal cual la aplica la herramienta. Reproducirla aquí es lo que
+    # permite comprobar en la placa que una cirugía ajena no busca nada, sin
+    # tener que hablarle al micrófono.
+    if args.procedimiento is not None:
+        disponibles = retriever.temas_disponibles()
+        resolucion = resolver_cirugia(
+            args.procedimiento, disponibles, cargar_alias(settings.data_dir)
+        )
+        print(f"\nProcedimiento: {args.procedimiento}  ->  {resolucion.estado}")
+        print(f"Cirugías cubiertas: {frase_temas(disponibles)}")
+        if resolucion.estado is Cobertura.CUBIERTA:
+            assert resolucion.tema is not None
+            temas = [resolucion.tema, TEMA_RAIZ]
+            print(f"Búsqueda restringida a: {resolucion.tema}")
+        elif resolucion.estado is not Cobertura.DESCONOCIDA:
+            detalle = (
+                f" (empata con {frase_temas(resolucion.candidatos)})"
+                if resolucion.candidatos
+                else ""
+            )
+            print(f"\n  BLOQUEADO{detalle}: no se busca nada y no hay extractos que dar.\n")
+            return 0
+
+    pasajes = retriever.buscar(consulta, top_k=args.top_k, temas=temas)
 
     print(f"\nConsulta: {consulta}")
     if not pasajes:

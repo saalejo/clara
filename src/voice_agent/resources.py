@@ -64,3 +64,17 @@ class AppResources:
     #: el planificador: por eso una llamada que se programa a mitad de una
     #: conversación entra en el calendario sin que nadie relea ningún fichero.
     almacen_misiones: AlmacenMisiones | None = None
+    #: De qué se operó el paciente, EN CRUDO y tal y como se nombró. Es la
+    #: llave de la puerta de cobertura (`voice_agent_core.cobertura`).
+    #:
+    #: Se guarda el texto y no el tema ya resuelto a propósito: los temas se
+    #: releen vivos en cada búsqueda, así que subir la guía de una cirugía
+    #: nueva y reindexar la desbloquea en mitad de la llamada, sin reiniciar el
+    #: agente. Con el tema congelado, esa decisión quedaría tomada para siempre.
+    cirugia_paciente: str = ""
+    #: De dónde salió el procedimiento: "evento" (la tarea del panel o la
+    #: misión), "historial" (llamó antes) o "modelo" (lo dijo el paciente
+    #: hablando). Decide quién puede pisarlo: lo que declara el modelo solo lo
+    #: pisa otra declaración del modelo, de modo que el dato del evento no se
+    #: puede hablar para abrirlo.
+    origen_procedimiento: str = ""

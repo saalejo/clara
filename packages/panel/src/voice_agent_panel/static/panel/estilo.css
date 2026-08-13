@@ -62,6 +62,14 @@ p.pie { color: var(--suave); margin-top: 0; }
 .estado.parado  { color: var(--suave); }
 .estado.fallido { color: var(--mal); }
 
+/* La barra de la reindexación. No es un <progress>: quería el mismo borde y el
+   mismo radio que las tarjetas, y darle estilo al elemento nativo obliga a
+   pelearse con tres pseudoelementos distintos según el navegador. */
+.barra { height: 8px; margin: .6rem 0 .35rem; border-radius: 999px;
+         background: #12141a; border: 1px solid var(--borde); overflow: hidden; }
+.barra > span { display: block; height: 100%; width: 0;
+                background: var(--acento); transition: width .3s ease; }
+
 /* El color del triaje clínico: verde/amarillo/rojo, siempre como distintivo
    visible en el registro de cada llamada. */
 .triaje { display: inline-block; padding: .05rem .6rem; border-radius: 999px;
@@ -121,3 +129,46 @@ pre { background: #12141a; border: 1px solid var(--borde); border-radius: 6px;
 .turno.paciente  { background: #241d24; margin-left: auto; }
 .turno.herramienta { background: #12141a; color: var(--suave); max-width: 100%;
                      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+/* La barra de filtros de Evaluaciones. Es el único formulario GET del panel, y
+   tiene que serlo: un filtro que no sobrevive a recargar ni a compartir el
+   enlace no sirve de nada. */
+.filtros { display: flex; flex-wrap: wrap; gap: .8rem 1rem; align-items: flex-end; }
+.filtros .campo { display: flex; flex-direction: column; }
+.filtros label { margin: 0 0 .2rem; font-size: 13px; }
+.filtros select, .filtros input[type=date] { width: auto; min-width: 9.5rem; }
+.filtros .acciones { margin-top: 0; }
+
+/* Una llamada por fila: la lista es un índice, no un expediente. El detalle
+   entero vive en su propia página, que es lo que la deja legible con cien
+   llamadas dentro. */
+.fila-exp { display: grid; gap: .7rem; align-items: baseline;
+            grid-template-columns: auto auto 1fr auto auto;
+            padding: .55rem .7rem; border-bottom: 1px solid var(--borde);
+            color: inherit; text-decoration: none; }
+.fila-exp:hover { background: var(--panel); }
+.fila-exp .momento { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 13px; color: var(--suave); }
+.fila-exp .quien { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fila-exp .ayuda { margin: 0; white-space: nowrap; }
+
+/* Distintivo neutro para la cobertura, el procedimiento y la dirección: misma
+   geometría que .triaje, pero sin robarle el color, que en esta casa significa
+   gravedad clínica y solo eso. */
+.etiqueta { display: inline-block; padding: .05rem .55rem; border-radius: 999px;
+            font-size: 12px; border: 1px solid var(--borde); color: var(--suave); }
+.etiqueta.cubierta    { color: var(--bien); }
+.etiqueta.no_cubierta { color: var(--mal); }
+.etiqueta.ambigua     { color: var(--ojo); }
+
+/* La traza documental de una llamada: un bloque por consulta al RAG, con los
+   pasajes que devolvió de verdad. */
+.traza { border-left: 2px solid var(--borde); padding-left: .8rem; margin: .8rem 0; }
+.traza .consulta { font-weight: 600; margin: 0 0 .3rem; }
+.traza table { font-size: 13px; }
+.traza .pasaje td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                    color: var(--suave); }
+
+@media (max-width: 40rem) {
+  .fila-exp { grid-template-columns: 1fr; gap: .25rem; }
+}

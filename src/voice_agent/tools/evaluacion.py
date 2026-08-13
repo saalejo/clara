@@ -21,6 +21,7 @@ from loguru import logger
 from pipecat.services.llm_service import FunctionCallParams
 
 from voice_agent.resources import AppResources
+from voice_agent_core.cobertura import Cobertura, cargar_alias, resolver_cirugia
 from voice_agent_core.evaluaciones import Alerta, NivelAlerta, ResumenLlamada
 from voice_agent_core.rutas import dir_alertas, dir_resumenes, escribir_json_atomico
 
@@ -46,6 +47,22 @@ _INDICACION_POR_NIVEL: dict[NivelAlerta, str] = {
         "los que debe llamar o acudir a urgencias."
     ),
 }
+
+
+def _cobertura_actual(recursos: AppResources) -> str:
+    """En qué estado deja la puerta de cobertura la cirugía de esta llamada.
+
+    Se recalcula contra los temas de ahora en vez de guardarse al buscar,
+    porque los temas se releen vivos: si el corpus creció a mitad de llamada,
+    lo que quede escrito en el registro tiene que ser lo que valía al cerrarlo.
+
+    Sin cirugía conocida devuelve "desconocida", que es lo que de verdad pasó.
+    """
+    if not recursos.cirugia_paciente:
+        return str(Cobertura.DESCONOCIDA)
+    temas = recursos.retriever.temas_disponibles()
+    alias = cargar_alias(recursos.settings.data_dir)
+    return str(resolver_cirugia(recursos.cirugia_paciente, temas, alias).estado)
 
 
 def _ruta_sin_pisar(carpeta: Path, momento: datetime) -> Path:
@@ -99,6 +116,11 @@ async def registrar_alerta(
         nivel=nivel_valido,
         sintomas=sintomas.strip(),
         justificacion=justificacion.strip(),
+        # Los pone el sistema, no el modelo, igual que el `nivel` del resumen:
+        # son hechos de la sesión, y pedírselos al modelo sería dejar que
+        # reescribiera en el registro lo que la puerta de cobertura ya decidió.
+        procedimiento=recursos.cirugia_paciente,
+        cobertura=_cobertura_actual(recursos),
     )
     carpeta = dir_alertas(recursos.settings.data_dir)
     ruta = _ruta_sin_pisar(carpeta, momento)
@@ -170,6 +192,11 @@ async def finalizar_llamada(
         # llamada deje la gravedad clara e inequívoca.
         nivel=str(recursos.ultima_alerta.nivel) if recursos.ultima_alerta else "",
         paciente_y_procedimiento=paciente_y_procedimiento.strip(),
+        # La cirugía sola, sin pasar por la prosa del modelo: es la que se puede
+        # cruzar con los temas del corpus y la que rearma la puerta cuando este
+        # número vuelva a llamar.
+        procedimiento=recursos.cirugia_paciente,
+        cobertura=_cobertura_actual(recursos),
         sintomas=sintomas.strip(),
         decision=decision.strip(),
         referencias=referencias.strip(),
@@ -201,6 +228,7 @@ async def finalizar_llamada(
             decision=resumen.decision,
             proximos_pasos=resumen.proximos_pasos,
             nivel=resumen.nivel,
+            procedimiento=resumen.procedimiento,
         )
 
     logger.info(f"[herramienta] finalizar_llamada -> {ruta.name}")

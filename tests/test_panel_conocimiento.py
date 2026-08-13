@@ -8,6 +8,7 @@ página y el aviso de "falta reindexar" dicen la verdad.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +18,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from voice_agent_core import corpus
+from voice_agent_core import cobertura, corpus
 from voice_agent_core.corpus import TEMA_RAIZ
+from voice_agent_core.ingesta import FaseIngesta, ProgresoIngesta, escribir_progreso
 from voice_agent_panel import control, views
 from voice_agent_panel.models import Reindexado
 
@@ -44,9 +46,13 @@ def corpus_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _corpus_aislado(corpus_dir: Path) -> Any:
-    """Ningún test toca el corpus de verdad de la placa."""
-    with override_settings(CORPUS_DIR=corpus_dir):
+def _corpus_aislado(corpus_dir: Path, tmp_path: Path) -> Any:
+    """Ningún test toca el corpus ni los datos de verdad de la placa.
+
+    `DATA_DIR` también, porque los alias de cada tema viven allí y no en el
+    corpus (ver `rutas.ruta_alias_temas`).
+    """
+    with override_settings(CORPUS_DIR=corpus_dir, DATA_DIR=tmp_path):
         yield
 
 
@@ -117,6 +123,85 @@ def _fuera_del_corpus(tmp_path: Path, corpus_dir: Path) -> set[str]:
         for r in tmp_path.rglob("*")
         if not r.is_relative_to(corpus_dir)
     }
+
+
+class TestLosNombresDeCadaTema:
+    """Declarar cómo llama la gente a la cirugía de un tema.
+
+    Es la única pieza configurable de la puerta de cobertura, y la que decide
+    si ampliar el corpus obliga o no a tocar código: sin ella, un tema nuevo
+    solo se reconoce por el nombre de su carpeta, y nadie dice «colecistitis».
+    """
+
+    def test_se_guardan_y_se_ven_en_la_pagina(
+        self, identificado: Client, corpus_dir: Path, tmp_path: Path
+    ) -> None:
+        (corpus_dir / "colecistitis").mkdir()
+
+        identificado.post(
+            reverse("tema_alias"),
+            {"tema": "colecistitis", "alias": "vesícula, hiel"},
+            follow=True,
+        )
+
+        assert cobertura.cargar_alias(tmp_path) == {"colecistitis": ("vesícula", "hiel")}
+        pagina = identificado.get(reverse("conocimiento")).content.decode()
+        assert "vesícula, hiel" in pagina
+
+    def test_el_agente_los_usa_sin_reindexar_ni_reiniciar(
+        self, identificado: Client, corpus_dir: Path, tmp_path: Path
+    ) -> None:
+        """El punto entero: por eso no van dentro del corpus."""
+        (corpus_dir / "oftalmologia").mkdir()
+        identificado.post(
+            reverse("tema_alias"), {"tema": "oftalmologia", "alias": "cataratas"}, follow=True
+        )
+
+        resolucion = cobertura.resolver_cirugia(
+            "me operaron de cataratas", ["oftalmologia"], cobertura.cargar_alias(tmp_path)
+        )
+
+        assert resolucion.tema == "oftalmologia"
+
+    def test_guardarlos_no_enciende_el_aviso_de_reindexar(
+        self, identificado: Client, corpus_dir: Path
+    ) -> None:
+        """No entran en el índice, así que no pueden dejarlo anticuado."""
+        (corpus_dir / "colecistitis").mkdir()
+        Reindexado.objects.create(marca_indexada=corpus.marca_de_cambio(corpus_dir))
+
+        identificado.post(
+            reverse("tema_alias"), {"tema": "colecistitis", "alias": "vesícula"}, follow=True
+        )
+
+        assert not views._estado_del_indice().hay_cambios
+
+    def test_vaciarlos_deja_el_tema_solo_con_su_nombre(
+        self, identificado: Client, corpus_dir: Path, tmp_path: Path
+    ) -> None:
+        (corpus_dir / "colecistitis").mkdir()
+        identificado.post(reverse("tema_alias"), {"tema": "colecistitis", "alias": "vesícula"})
+
+        identificado.post(reverse("tema_alias"), {"tema": "colecistitis", "alias": "  ,  "})
+
+        assert cobertura.cargar_alias(tmp_path) == {}
+
+    def test_un_tema_que_no_existe_no_escribe_nada(
+        self, identificado: Client, corpus_dir: Path, tmp_path: Path
+    ) -> None:
+        """Mismo cuidado que el resto de la página: el tema viene de la petición."""
+        respuesta = identificado.post(
+            reverse("tema_alias"), {"tema": "../../fuera", "alias": "lo que sea"}, follow=True
+        )
+
+        assert cobertura.cargar_alias(tmp_path) == {}
+        assert "no existe" in respuesta.content.decode()
+
+    def test_hace_falta_estar_identificado(self, client: Client, corpus_dir: Path) -> None:
+        respuesta = client.post(reverse("tema_alias"), {"tema": "x", "alias": "y"})
+
+        assert respuesta.status_code == 302
+        assert "entrar" in respuesta["Location"]
 
 
 # --- Temas -------------------------------------------------------------------
@@ -386,3 +471,104 @@ def test_el_estado_del_indice_se_calcula_sin_reventar_con_el_corpus_vacio(
     identificado: Client,
 ) -> None:
     assert views._estado_del_indice().marca_actual >= 0.0
+
+
+# --- La barra de la reindexación ---------------------------------------------
+#
+# La escribe la ingesta, que corre en otro proceso; el panel solo la lee y la
+# pinta. Estos tests cubren el lado del panel: que lo publicado llegue a la
+# página y que un fichero ausente no la rompa.
+
+
+def _publicar_progreso(data_dir: Path, **campos: Any) -> None:
+    ahora = datetime(2026, 8, 12, 9, 0, 0)
+    campos.setdefault("iniciada_en", ahora)
+    campos.setdefault("actualizada_en", ahora + timedelta(seconds=12))
+    escribir_progreso(data_dir, ProgresoIngesta(**campos))
+
+
+def test_sin_reindexaciones_el_progreso_no_inventa_nada(identificado: Client) -> None:
+    datos = identificado.get(reverse("conocimiento_progreso")).json()
+
+    assert datos == {"en_marcha": False, "fallo": False}
+
+
+def test_el_progreso_publicado_llega_a_la_barra(identificado: Client, tmp_path: Path) -> None:
+    _publicar_progreso(
+        tmp_path,
+        fase=FaseIngesta.INDEXANDO,
+        documentos_total=106,
+        documentos_sin_cambios=104,
+        documentos_pendientes=2,
+        documentos_hechos=1,
+        documento_actual="colecistitis/guia.pdf",
+    )
+
+    datos = identificado.get(reverse("conocimiento_progreso")).json()
+
+    assert datos["fase"] == "indexando"
+    assert datos["porcentaje"] == 52
+    assert datos["documento"] == "colecistitis/guia.pdf"
+    assert datos["documentos_sin_cambios"] == 104
+    assert datos["duracion_s"] == 12.0
+    assert not datos["terminada"]
+
+
+def test_el_progreso_delata_a_una_ingesta_muerta(
+    identificado: Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """El fichero se queda congelado a mitad si la ingesta muere de golpe.
+
+    Quien desmiente esa foto es systemd: por eso la respuesta lleva las dos
+    cosas y la página se fía de `en_marcha` para seguir sondeando.
+    """
+    _publicar_progreso(tmp_path, fase=FaseIngesta.INDEXANDO, documentos_pendientes=9)
+
+    datos = identificado.get(reverse("conocimiento_progreso")).json()
+
+    assert datos["fase"] == "indexando"
+    assert datos["en_marcha"] is False
+
+
+def test_mientras_la_unidad_vive_el_progreso_lo_dice(
+    identificado: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _arrancando(unidad: str | None = None) -> control.EstadoUnidad:
+        es_ingesta = unidad == "voice-agent-ingest.service"
+        return control.EstadoUnidad(
+            unidad=unidad or "voice-agent.service",
+            active_state="activating" if es_ingesta else "inactive",
+            sub_state="start" if es_ingesta else "dead",
+            resultado="success",
+        )
+
+    monkeypatch.setattr(control, "estado", _arrancando)
+
+    datos = identificado.get(reverse("conocimiento_progreso")).json()
+
+    assert datos["en_marcha"] is True
+
+
+def test_la_pagina_resume_la_ultima_pasada(identificado: Client, tmp_path: Path) -> None:
+    """Lo que explica que reindexar cien documentos pueda tardar diez segundos."""
+    _publicar_progreso(
+        tmp_path,
+        fase=FaseIngesta.TERMINADO,
+        documentos_total=106,
+        documentos_sin_cambios=104,
+        documentos_pendientes=2,
+        documentos_hechos=2,
+        fragmentos_nuevos=57,
+    )
+
+    contenido = identificado.get(reverse("conocimiento")).content.decode()
+
+    assert "104 sin cambios" in contenido
+    assert "57 fragmento(s) nuevo(s)" in contenido
+
+
+def test_el_progreso_esta_detras_del_login(client: Client) -> None:
+    respuesta = client.get(reverse("conocimiento_progreso"))
+
+    assert respuesta.status_code == 302
+    assert reverse("login") in respuesta["Location"]

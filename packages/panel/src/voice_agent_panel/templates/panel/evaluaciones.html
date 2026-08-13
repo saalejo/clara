@@ -1,42 +1,113 @@
 {% extends "panel/base.html" %}
+{% block titulo %}Evaluaciones clínicas{% endblock %}
 {% block contenido %}
 <h1>Evaluaciones clínicas</h1>
-<p class="pie">Lo escribe el agente durante las llamadas: las alertas de triaje
-  con <code>registrar_alerta</code> (en el momento de decidir, no al colgar) y
-  los resúmenes con <code>finalizar_llamada</code>. La traza documental de cada
-  llamada queda en <code>data/evaluaciones/trazas/</code>. Se enseñan las
-  últimas cincuenta.</p>
+<p class="pie">Una llamada por fila. Cada una junta lo que el agente dejó en dos
+  sitios: las alertas de triaje y el resumen (<code>registrar_alerta</code> y
+  <code>finalizar_llamada</code>) con la ficha del historial, que es la única que
+  sabe de qué número vino. Las llamadas de navegador, de número oculto o de
+  aplicación no abren ficha, y salen aquí igual, marcadas <em>sin ficha</em>.</p>
 
-<h2>Alertas de triaje</h2>
-{% for a in alertas %}
-<div class="tarjeta">
-  <p><strong>{{ a.momento }}</strong> — <span class="triaje {{ a.nivel }}">{{ a.nivel }}</span>
-    <span class="ayuda">({{ a.id_llamada }})</span></p>
-  <p style="white-space:pre-wrap">{{ a.sintomas }}</p>
-  <p class="ayuda" style="white-space:pre-wrap">{{ a.justificacion }}</p>
-</div>
+{% for aviso in avisos %}<div class="aviso warning">{{ aviso }}</div>{% endfor %}
+
+<form method="get" class="tarjeta filtros">
+  <div class="campo">
+    <label for="desde">Desde</label>
+    <input type="date" id="desde" name="desde" value="{{ criterios.desde|date:'Y-m-d' }}">
+  </div>
+  <div class="campo">
+    <label for="hasta">Hasta</label>
+    <input type="date" id="hasta" name="hasta" value="{{ criterios.hasta|date:'Y-m-d' }}">
+  </div>
+  <div class="campo">
+    <label for="nivel">Triaje</label>
+    <select id="nivel" name="nivel">
+      <option value="">Cualquiera</option>
+      {% for n in niveles %}
+      <option value="{{ n.value }}" {% if criterios.nivel == n %}selected{% endif %}>{{ n.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="procedimiento">Procedimiento</label>
+    <select id="procedimiento" name="procedimiento">
+      <option value="">Cualquiera</option>
+      {% for p in opciones.procedimientos %}
+      <option value="{{ p }}" {% if criterios.procedimiento == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="cobertura">Cobertura</label>
+    <select id="cobertura" name="cobertura">
+      <option value="">Cualquiera</option>
+      {% for c in coberturas %}
+      <option value="{{ c.value }}" {% if criterios.cobertura == c %}selected{% endif %}>{{ c.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="direccion">Dirección</label>
+    <select id="direccion" name="direccion">
+      <option value="">Cualquiera</option>
+      {% for d in direcciones %}
+      <option value="{{ d }}" {% if criterios.direccion == d %}selected{% endif %}>
+        {% if d == "mision" %}misión saliente{% elif d == "sin_ficha" %}sin ficha (navegador, oculto o app){% else %}{{ d }}{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="campo">
+    <label for="numero">Paciente</label>
+    <select id="numero" name="numero">
+      <option value="">Cualquiera</option>
+      {% for p in opciones.pacientes %}
+      <option value="{{ p.numero }}" {% if criterios.numero == p.numero %}selected{% endif %}>
+        {{ p.numero }}{% if p.nombre %} — {{ p.nombre }}{% endif %} ({{ p.total_llamadas }})
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  <input type="hidden" name="limite" value="{{ criterios.tope }}">
+  <div class="acciones">
+    <button class="principal">Filtrar</button>
+    {% if criterios.activos %}<a class="boton" href="{% url 'evaluaciones' %}">Quitar filtros</a>{% endif %}
+  </div>
+</form>
+
+{% if resultado.motivo_truncado == "lectura" %}
+<div class="aviso warning">Solo se han mirado los ficheros más recientes: puede
+  faltar algo más antiguo. Acota por fecha para llegar hasta allí.</div>
+{% endif %}
+
+<h2>{{ resultado.expedientes|length }} llamada{{ resultado.expedientes|length|pluralize }}</h2>
+
+{% for e in resultado.expedientes %}
+<a class="fila-exp" href="{% url 'evaluacion_detalle' e.id_llamada %}{% if consulta %}?{{ consulta }}{% endif %}">
+  <span class="momento">{{ e.momento|default:"sin fecha" }}</span>
+  {% if e.nivel %}<span class="triaje {{ e.nivel }}">{{ e.nivel }}</span>
+  {% else %}<span class="triaje sin">sin triaje</span>{% endif %}
+  <span class="quien">
+    {% if e.nombre %}{{ e.nombre }} <span class="ayuda">{{ e.numero }}</span>
+    {% elif e.numero %}{{ e.numero }}
+    {% else %}<span class="ayuda">sin ficha</span>{% endif %}
+    {% if e.procedimiento %} · {{ e.procedimiento }}{% endif %}
+  </span>
+  {% if e.cobertura %}<span class="etiqueta {{ e.cobertura }}">{{ e.cobertura }}</span>{% endif %}
+  <span class="ayuda">{{ e.alertas|length }} alerta{{ e.alertas|length|pluralize }}{% if not e.resumen %} · sin resumen{% endif %}</span>
+</a>
 {% empty %}
-<p class="ayuda">Ninguna todavía.</p>
+<p class="ayuda">{% if criterios.activos %}Ninguna llamada cumple estos filtros.
+  {% else %}Ninguna todavía.{% endif %}</p>
 {% endfor %}
 
-<h2>Resúmenes de llamada</h2>
-{% for r in resumenes %}
-<div class="tarjeta">
-  <p><strong>{{ r.momento }}</strong>
-    {% if r.nivel %}<span class="triaje {{ r.nivel }}">{{ r.nivel }}</span>
-    {% else %}<span class="triaje sin">sin triaje</span>{% endif %}
-    — {{ r.paciente_y_procedimiento }}
-    <span class="ayuda">({{ r.id_llamada }})</span></p>
-  <p style="white-space:pre-wrap"><strong>Síntomas:</strong> {{ r.sintomas }}</p>
-  <p style="white-space:pre-wrap"><strong>Decisión:</strong> {{ r.decision }}</p>
-  <p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ r.proximos_pasos }}</p>
-  {% if r.referencias %}<p style="white-space:pre-wrap"><strong>Referencias citadas:</strong> {{ r.referencias }}</p>{% endif %}
-  {% if r.documentos_consultados %}
-  <p class="ayuda"><strong>Documentos consultados (traza real):</strong>
-    {{ r.documentos_consultados|join:" · " }}</p>
-  {% endif %}
+{% if siguiente_tope and resultado.truncado %}
+<div class="acciones">
+  <a class="boton" href="?{% if consulta %}{{ consulta }}&amp;{% endif %}limite={{ siguiente_tope }}">Ver más</a>
 </div>
-{% empty %}
-<p class="ayuda">Ninguno todavía.</p>
-{% endfor %}
+{% endif %}
+
+<p class="pie ayuda">Se han abierto {{ resultado.ficheros_examinados }} fichero{{ resultado.ficheros_examinados|pluralize }}
+  de evaluación para armar esta lista. Acotar por fecha reduce ese número antes
+  de abrir nada, que es la mitad cara en la placa.</p>
 {% endblock %}
