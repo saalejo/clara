@@ -136,3 +136,6 @@ la interfaz de llamada, los límites de sesión, el panel) y por qué cada pieza
 es como es. `docs/audio.md` es el más importante: el camino del audio es donde más tiempo se
 pierde. Luego `arquitectura.md`, `rag.md`, `herramientas.md`, `panel.md`,
 `telefonia.md`, `botones.md`, `despliegue.md` y `rendimiento.md`.
+`docs/marco-legal.md` recoge la investigación del marco legal colombiano del
+negocio (datos e IA, contacto comercial, sector salud, tributación) con su
+checklist de cumplimiento; no es asesoría legal.
