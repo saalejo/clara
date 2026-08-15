@@ -40,6 +40,7 @@ import voice_agent_core.historial
 import voice_agent_core.limitador
 import voice_agent_core.misiones
 import voice_agent_core.prompts
+import voice_agent_core.prospectos
 import voice_agent_core.runtime
 import voice_agent_core.rutas
 import voice_agent_core.tareas

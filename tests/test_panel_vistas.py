@@ -32,6 +32,7 @@ RUTAS_PRIVADAS = [
     "tareas",
     "evaluaciones",
     "pacientes",
+    "prospectos",
     "calidad",
     "logs",
     "despliegues",
@@ -195,14 +196,29 @@ def test_una_accion_desconocida_no_hace_nada(identificado: Client) -> None:
     assert respuesta.status_code == 200
 
 
-def test_el_prompt_se_siembra_la_primera_vez(identificado: Client) -> None:
-    # Al abrirlo sin nada guardado, se enseña lo que el agente trae de fábrica,
-    # que es lo que de verdad está corriendo.
-    from voice_agent_core.prompts import PROMPT_SISTEMA
+def test_el_perfil_activo_trae_su_version_de_la_migracion(identificado: Client) -> None:
+    # El perfil Marketing llega sembrado: abrir la página no crea nada nuevo.
+    from voice_agent_core.prompts import PROMPT_SISTEMA_MARKETING
 
     identificado.get(reverse("prompt"))
 
     activa = VersionPrompt.activa_de(Perfil.objects.get(activo=True))
+    assert activa is not None
+    assert activa.prompt_sistema == PROMPT_SISTEMA_MARKETING
+    assert VersionPrompt.objects.count() == 1
+
+
+def test_el_prompt_se_siembra_la_primera_vez(identificado: Client) -> None:
+    # Un perfil recién creado no tiene versión: al abrir su página del prompt
+    # se enseña lo que el agente trae de fábrica, que es lo que de verdad
+    # correría sin runtime.json.
+    from voice_agent_core.prompts import PROMPT_SISTEMA
+
+    nuevo = Perfil.objects.create(nombre="Nocturno")
+    identificado.post(reverse("perfil_seleccionar", args=[nuevo.pk]))
+    identificado.get(reverse("prompt"))
+
+    activa = VersionPrompt.activa_de(nuevo)
     assert activa is not None
     assert activa.prompt_sistema == PROMPT_SISTEMA
 

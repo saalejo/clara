@@ -37,17 +37,28 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def perfil() -> Perfil:
-    """El perfil "Por defecto" que siembra la migración, ya activo."""
+    """El perfil "Marketing" que siembra la migración, ya activo."""
     return cast(Perfil, Perfil.objects.get(activo=True))
 
 
-def test_sin_nada_configurado_exporta_los_valores_por_defecto(tmp_path: Path) -> None:
+def test_sin_nada_configurado_exporta_el_perfil_marketing(tmp_path: Path) -> None:
+    # La base recién migrada exporta el perfil comercial sembrado: su prompt y
+    # las herramientas clínicas apagadas.
+    from voice_agent_core.prompts import PROMPT_SISTEMA_MARKETING
+
     exportar(tmp_path)
 
     assert json.loads(ruta_snapshot_settings(tmp_path).read_text()) == {}
     runtime = RuntimeConfig.model_validate_json(ruta_runtime(tmp_path).read_text())
-    assert runtime.prompt.prompt_sistema == RuntimeConfig().prompt.prompt_sistema
-    assert runtime.perfil == "Por defecto"
+    assert runtime.prompt.prompt_sistema == PROMPT_SISTEMA_MARKETING
+    assert runtime.perfil == "Marketing"
+    assert {
+        "buscar_en_documentos",
+        "registrar_alerta",
+        "finalizar_llamada",
+        "guardar_respuestas",
+        "historial_paciente",
+    } <= set(runtime.herramientas_desactivadas)
 
 
 def test_un_despliegue_completo_refresca_tambien_las_tareas(tmp_path: Path) -> None:
@@ -133,8 +144,7 @@ def test_el_prompt_activo_es_el_que_se_exporta(tmp_path: Path, perfil: Perfil) -
         alma="Eres directo.",
         saludo_inicial="buenas",
         muletillas={"consulta": ["un momento"]},
-        activa=True,
-    )
+    ).activar()
 
     runtime = construir_runtime()
 
@@ -158,7 +168,9 @@ def test_herramientas_hooks_y_mcp_se_exportan(tmp_path: Path, perfil: Perfil) ->
 
     runtime = construir_runtime()
 
-    assert runtime.herramientas_desactivadas == frozenset({"estado_del_sistema"})
+    # Además de la apagada aquí viajan las clínicas que apagó la migración del
+    # perfil Marketing: lo que importa es que la del test esté entre ellas.
+    assert "estado_del_sistema" in runtime.herramientas_desactivadas
     assert [s.nombre for s in runtime.servidores_mcp_activos] == ["ficheros"]
     assert runtime.hay_hooks
 
@@ -218,8 +230,7 @@ def test_avisa_si_el_prompt_menciona_una_herramienta_apagada(perfil: Perfil) -> 
         prompt_sistema="Tienes buscar_en_documentos para consultar.",
         saludo_inicial="hola",
         muletillas={},
-        activa=True,
-    )
+    ).activar()
 
     assert herramientas_citadas_en_el_prompt({"buscar_en_documentos"}) == ["buscar_en_documentos"]
 
@@ -230,7 +241,6 @@ def test_no_avisa_si_el_prompt_no_la_menciona(perfil: Perfil) -> None:
         prompt_sistema="Habla claro.",
         saludo_inicial="hola",
         muletillas={},
-        activa=True,
-    )
+    ).activar()
 
     assert herramientas_citadas_en_el_prompt({"buscar_en_documentos"}) == []

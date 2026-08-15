@@ -1,11 +1,11 @@
-"""La llamada de voz desde el navegador (compuerta G4 del reto).
+"""La llamada de voz desde el navegador.
 
 El agente de la sala habla por ALSA; aquí la "sala" es una pestaña del
 navegador: el micrófono y el altavoz viajan por WebRTC (`SmallWebRTCTransport`,
 sobre aiortc) y la señalización por HTTP (`POST /api/offer`). La interfaz que
-ve el jurado es la UI precompilada de `pipecat-ai-small-webrtc-prebuilt`,
-montada en `/`; el diseño visual no puntúa en el reto, el contrato funcional
-—iniciar llamada, hablar, escuchar— sí.
+ve el visitante es la UI precompilada de `pipecat-ai-small-webrtc-prebuilt`,
+montada en `/`; lo que importa es el contrato funcional —iniciar llamada,
+hablar, escuchar—, no el diseño visual.
 
 Decisiones que no son obvias mirando el código:
 
@@ -40,11 +40,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
+from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from loguru import logger
 from pipecat.frames.frames import TTSSpeakFrame
@@ -67,7 +69,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 from pipecat_ai_small_webrtc_prebuilt.frontend import SmallWebRTCPrebuiltUI
 
-from voice_agent.acceso import PuertaDeAcceso, enlace_de_whatsapp
+from voice_agent.acceso import PuertaDeAcceso, enlace_de_whatsapp, es_https
 from voice_agent.bot import _preparar_telefonia
 from voice_agent.fillers import FillerBank, FillerProcessor
 from voice_agent.logging import setup_logging
@@ -75,7 +77,7 @@ from voice_agent.metrica import MetricsRecorder, anotar_evento
 from voice_agent.misiones_agente import AlmacenMisiones
 from voice_agent.rag.retriever import Retriever
 from voice_agent.resources import AppResources
-from voice_agent.respaldo import resumen_de_respaldo
+from voice_agent.respaldo import cierre_de_prospecto, resumen_de_respaldo
 from voice_agent.services import (
     build_llm,
     build_stt,
@@ -91,8 +93,9 @@ from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings, get_settings
 from voice_agent_core.historial import HistorialPacientes
 from voice_agent_core.limitador import LimitadorDeIntentos, ip_del_cliente
+from voice_agent_core.prospectos import AlmacenProspectos, FichaProspecto
 from voice_agent_core.runtime import RuntimeConfig, cargar_runtime
-from voice_agent_core.rutas import ruta_historial, ruta_log_agente
+from voice_agent_core.rutas import ruta_historial, ruta_log_agente, ruta_prospectos
 
 #: Lo que se añade al prompt del sistema en una llamada por navegador. Igual
 #: que en telefonía, sustituye el contexto de "estás en la habitación": quien
@@ -102,6 +105,76 @@ PROMPT_LLAMADA_WEB = """
 Estás atendiendo una llamada de voz: quien te habla está al otro lado de la
 línea, no en la habitación. Sé breve —es una llamada, no una charla— y no
 prometas acciones que no puedas hacer desde aquí."""
+
+#: Nombre de la galleta que identifica al prospecto entre visitas.
+NOMBRE_GALLETA_PROSPECTO = "vd_prospecto"
+
+#: Vida de la galleta. Constante y no campo de `Settings` a propósito: es un
+#: detalle del reconocimiento de visitas, no un ajuste que operar desde el
+#: panel, y cada campo nuevo de `Settings` arrastra formulario y tests.
+DIAS_GALLETA_PROSPECTO = 180
+
+#: Un id de prospecto legítimo es el `uuid4().hex` que emitió este servidor.
+#: La galleta no va firmada —es un token-capacidad inadivinable, y firmarla
+#: ataría su validez al código de acceso, que rota—, así que lo único que hay
+#: que parar es la basura: un valor inventado con otra pinta no abre ficha.
+_ID_PROSPECTO = re.compile(r"^[0-9a-f]{32}$")
+
+#: Se añade al prompt del sistema cuando el navegador ya tiene ficha: es la
+#: versión comercial de `PROMPT_HISTORIAL_PREVIO` en telefonía, con la misma
+#: cautela — la memoria es del dispositivo, no de la persona.
+PROMPT_PROSPECTO_RECURRENTE = """
+
+Memoria comercial de este navegador: {total} conversación(es) registradas. La
+última, el {fecha}: {detalle}. Dale continuidad —retoma lo pendiente en vez de
+empezar de cero— pero confirma antes con quién hablas: el navegador es del
+dispositivo, no de la persona, y puede ser alguien distinto."""
+
+
+def modo_prospectos(runtime: RuntimeConfig) -> bool:
+    """Decide si el pipeline web trabaja en modo comercial (prospectos).
+
+    Se decide por la configuración de herramientas y no por el nombre del
+    perfil, que es solo informativo: un perfil con `guardar_brief` encendida y
+    `finalizar_llamada` apagada es un perfil comercial, se llame como se
+    llame. Con los valores de fábrica —sin `runtime.json`, todas encendidas—
+    cae en clínico, así que la degradación de `cargar_runtime` conserva el
+    comportamiento de siempre.
+    """
+    apagadas = set(runtime.herramientas_desactivadas)
+    return "guardar_brief" not in apagadas and "finalizar_llamada" in apagadas
+
+
+def galleta_de_prospecto(cookies: Mapping[str, str]) -> tuple[str, bool]:
+    """Resuelve el id del prospecto de esta visita.
+
+    Returns:
+        El id (el de la galleta si es legítimo, o uno nuevo) y si hay que
+        emitir la galleta en la respuesta.
+    """
+    valor = (cookies.get(NOMBRE_GALLETA_PROSPECTO) or "").strip()
+    if _ID_PROSPECTO.fullmatch(valor):
+        return valor, False
+    return uuid4().hex, True
+
+
+def _describir_ficha_prospecto(ficha: FichaProspecto) -> str:
+    """Resume la ficha en una frase para el prompt, como `_describir_ficha`."""
+    partes = []
+    if ficha.prospecto.nombre or ficha.prospecto.empresa:
+        quien = " — ".join(p for p in (ficha.prospecto.nombre, ficha.prospecto.empresa) if p)
+        partes.append(f"habló {quien}")
+    brief = ficha.ultimo_brief
+    if brief is not None:
+        if brief.necesidad:
+            partes.append(f"necesitaba {brief.necesidad}")
+        if brief.proximos_pasos:
+            partes.append(f"quedó pendiente: {brief.proximos_pasos}")
+    elif ficha.ultima.resumen:
+        partes.append(ficha.ultima.resumen)
+    if not partes:
+        return "sin detalles registrados (la conversación quedó sin resumen)"
+    return "; ".join(partes)
 
 
 def _servidores_ice(settings: Settings) -> list[IceServer]:
@@ -139,7 +212,11 @@ class ServiciosWeb:
     """
 
     def __init__(
-        self, settings: Settings, runtime: RuntimeConfig, retriever: Retriever | None = None
+        self,
+        settings: Settings,
+        runtime: RuntimeConfig,
+        retriever: Retriever | None = None,
+        prospectos: AlmacenProspectos | None = None,
     ) -> None:
         """Prepara el almacén sin cargar nada todavía.
 
@@ -151,10 +228,13 @@ class ServiciosWeb:
                 abriéndose a la vez en hilos distintos corrompen su caché
                 interna ("Could not connect to tenant default_tenant") — pasó
                 al precargar web y telefonía en paralelo.
+            prospectos: La memoria comercial, solo en modo prospectos. Que
+                esté aquí o no es lo que decide el modo de cada conversación.
         """
         self._settings = settings
         self._runtime = runtime
         self._retriever = retriever
+        self._prospectos = prospectos
         self._listos: tuple[Any, Any, Any] | None = None
         self._cargando: asyncio.Task[None] | None = None
         self._banco: FillerBank | None = None
@@ -164,6 +244,11 @@ class ServiciosWeb:
     def banco(self) -> FillerBank | None:
         """El banco de muletillas, si están activadas y cargadas."""
         return self._banco
+
+    @property
+    def prospectos(self) -> AlmacenProspectos | None:
+        """La memoria comercial compartida, o `None` fuera del modo prospectos."""
+        return self._prospectos
 
     @property
     def recursos(self) -> AppResources | None:
@@ -297,11 +382,19 @@ async def _vigilar_duracion(
     await conexion.disconnect()  # type: ignore[no-untyped-call]
 
 
-async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -> None:
+async def _conversar(
+    conexion: SmallWebRTCConnection, servicios: ServiciosWeb, id_prospecto: str = ""
+) -> None:
     """Monta el pipeline sobre la conexión WebRTC y conversa hasta que cuelguen.
 
     No propaga excepciones: corre como tarea suelta y un fallo aquí no debe
     tumbar el servidor HTTP.
+
+    Args:
+        conexion: La conexión WebRTC recién negociada.
+        servicios: Los servicios precargados del pipeline web.
+        id_prospecto: El id de la galleta del visitante, solo en modo
+            prospectos; vacío en el clínico.
     """
     settings = servicios.settings
     runtime = servicios.runtime
@@ -312,12 +405,25 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
         # pero la traza documental pertenece a esta conversación — es lo que
         # permite verificar qué documento respaldó cada respuesta.
         recursos = None
+        ficha_prospecto: FichaProspecto | None = None
         if servicios.recursos is not None:
             recursos = AppResources(
                 settings=settings,
                 retriever=servicios.recursos.retriever,
                 traza=TrazaLlamada(settings.data_dir),
+                prospectos=servicios.prospectos,
+                id_prospecto=id_prospecto,
             )
+            if servicios.prospectos is not None and id_prospecto:
+                # La ficha se lee ANTES de registrar la conversación en curso:
+                # así el "ya hubo N conversaciones" del prompt cuenta solo las
+                # anteriores. Registrar al principio y no al colgar es la
+                # doctrina de `registrar_llamada`: una caída también cuenta.
+                ficha_prospecto = servicios.prospectos.ficha(id_prospecto)
+                if recursos.traza is not None:
+                    servicios.prospectos.registrar_conversacion(
+                        recursos.traza.id_llamada, id_prospecto
+                    )
 
         transporte = SmallWebRTCTransport(
             webrtc_connection=conexion,
@@ -329,13 +435,15 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
             ),
         )
 
+        prompt_sistema = runtime.prompt.prompt_sistema_efectivo + PROMPT_LLAMADA_WEB
+        if ficha_prospecto is not None:
+            prompt_sistema += PROMPT_PROSPECTO_RECURRENTE.format(
+                total=ficha_prospecto.total_conversaciones,
+                fecha=ficha_prospecto.ultima.momento[:10],
+                detalle=_describir_ficha_prospecto(ficha_prospecto),
+            )
         contexto = LLMContext(
-            messages=[
-                {
-                    "role": "system",
-                    "content": runtime.prompt.prompt_sistema_efectivo + PROMPT_LLAMADA_WEB,
-                }
-            ],
+            messages=[{"role": "system", "content": prompt_sistema}],
             # Sin recursos (índice ausente) no se ofrece ninguna herramienta:
             # anunciar una herramienta que no puede funcionar hace que el
             # modelo diga que la ha consultado (ver docs/herramientas.md).
@@ -439,7 +547,14 @@ async def _conversar(conexion: SmallWebRTCConnection, servicios: ServiciosWeb) -
                     await vigilante
             anotar_evento(settings.data_dir, "llamada_fin", id_llamada=id_llamada)
             if recursos is not None:
-                resumen_de_respaldo(recursos, contexto)
+                if recursos.prospectos is not None:
+                    # Modo prospectos: la conversación se anota en su almacén
+                    # y NO se escribe el respaldo clínico — sembraría
+                    # `data/evaluaciones/` de falsos pacientes que la página
+                    # Pacientes del panel enseñaría.
+                    cierre_de_prospecto(recursos, contexto)
+                else:
+                    resumen_de_respaldo(recursos, contexto)
     except Exception:
         logger.exception("El pipeline de la llamada web murió")
     finally:
@@ -477,7 +592,16 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             retriever_compartido = await asyncio.to_thread(Retriever, config)
         except Exception:
             logger.exception("Sin RAG; el agente atenderá sin herramientas")
-        servicios = ServiciosWeb(config, runtime, retriever=retriever_compartido)
+        # La memoria comercial solo se abre en modo prospectos: en el perfil
+        # clínico el fichero ni se crea, y la conversación web se comporta
+        # exactamente como siempre.
+        almacen_prospectos: AlmacenProspectos | None = None
+        if modo_prospectos(runtime):
+            almacen_prospectos = AlmacenProspectos(ruta_prospectos(config.data_dir))
+            logger.info("Modo prospectos activo: las conversaciones web dejan ficha comercial")
+        servicios = ServiciosWeb(
+            config, runtime, retriever=retriever_compartido, prospectos=almacen_prospectos
+        )
         servicios.precargar()
         _app.state.servicios = servicios
         # Las conversaciones en curso. Guardar la referencia es obligatorio
@@ -570,7 +694,7 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             if audio_llamadas is not None:
                 await audio_llamadas.parar()
 
-    app = FastAPI(title="Llamada de voz — seguimiento postoperatorio", lifespan=_vida)
+    app = FastAPI(title="Llamada de voz — Voz Digital", lifespan=_vida)
 
     # La puerta se instala aquí y no junto a las rutas: un middleware envuelve
     # al router entero, así que el `mount("/")` del final también queda detrás.
@@ -603,8 +727,17 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     # derivar de él un modelo de Pydantic. Sin esto, `crear_app` lanza
     # `FastAPIError` AL ARRANCAR, no al llamar a la ruta.
     @app.post("/api/offer", response_model=None)
-    async def _ofertar(request: Request) -> dict[str, str] | JSONResponse | None:
-        """Negocia la sesión WebRTC con el navegador y arranca la conversación."""
+    async def _ofertar(
+        request: Request, respuesta: Response
+    ) -> dict[str, str] | JSONResponse | None:
+        """Negocia la sesión WebRTC con el navegador y arranca la conversación.
+
+        El parámetro `respuesta` lo inyecta FastAPI: sus cabeceras se fusionan
+        con el `dict` que se devuelve en el camino bueno, que es donde se emite
+        la galleta del prospecto. En los rechazos (`JSONResponse` directa) no
+        se fusiona nada, y está bien así: a quien no se atiende no se le
+        identifica.
+        """
         # Una oferta SDP legítima no llega a 10 KB. Leer megabytes en memoria
         # para descartarlos después sería regalarle la RAM de la placa a quien
         # ya tenga la galleta.
@@ -671,11 +804,28 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
             if cuota.max_intentos > 0:
                 cuota.anotar_fallo(ip)
 
+        # La identidad del visitante entre visitas, solo en modo prospectos.
+        # La galleta se emite aquí y no en la puerta de acceso: la puerta
+        # protege también al perfil clínico, que no debe identificar a nadie.
+        id_prospecto = ""
+        if servicios.prospectos is not None:
+            id_prospecto, emitir = galleta_de_prospecto(request.cookies)
+            if emitir:
+                respuesta.set_cookie(
+                    NOMBRE_GALLETA_PROSPECTO,
+                    id_prospecto,
+                    max_age=DIAS_GALLETA_PROSPECTO * 86400,
+                    httponly=True,
+                    samesite="lax",
+                    secure=es_https(request),
+                    path="/",
+                )
+
         async def _al_conectar(conexion: SmallWebRTCConnection) -> None:
             # La conversación corre en su propia tarea: esta petición HTTP
             # tiene que devolver la respuesta SDP ya, no al colgar.
             llamadas: set[asyncio.Task[None]] = request.app.state.llamadas
-            tarea = asyncio.create_task(_conversar(conexion, servicios))
+            tarea = asyncio.create_task(_conversar(conexion, servicios, id_prospecto))
             llamadas.add(tarea)
             tarea.add_done_callback(llamadas.discard)
 
@@ -683,7 +833,7 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/salud")
     async def _salud() -> dict[str, str]:
-        """Sonda de vida para el túnel y el README del jurado."""
+        """Sonda de vida para el túnel."""
         return {"estado": "ok"}
 
     # La UI va al final: monta en `/` y se quedaría con todas las rutas que se
@@ -694,4 +844,13 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-__all__ = ["PROMPT_LLAMADA_WEB", "ServiciosWeb", "crear_app"]
+__all__ = [
+    "DIAS_GALLETA_PROSPECTO",
+    "NOMBRE_GALLETA_PROSPECTO",
+    "PROMPT_LLAMADA_WEB",
+    "PROMPT_PROSPECTO_RECURRENTE",
+    "ServiciosWeb",
+    "crear_app",
+    "galleta_de_prospecto",
+    "modo_prospectos",
+]

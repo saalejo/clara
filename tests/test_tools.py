@@ -132,6 +132,9 @@ class TestEsquemas:
             "estado_del_sistema",
             "guardar_respuestas",
             "historial_paciente",
+            "identificar_prospecto",
+            "guardar_brief",
+            "historial_prospecto",
         }
 
     def test_la_busqueda_exige_la_consulta_y_la_cirugia(self) -> None:

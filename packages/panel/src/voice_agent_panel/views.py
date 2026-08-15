@@ -57,6 +57,7 @@ from voice_agent_core.misiones import (
     cargar_cancelaciones,
     cargar_misiones,
 )
+from voice_agent_core.prospectos import AlmacenProspectos
 from voice_agent_core.runtime import EventoHook
 from voice_agent_core.rutas import (
     dir_resultados_calidad,
@@ -66,6 +67,7 @@ from voice_agent_core.rutas import (
     ruta_historial,
     ruta_lote_calidad,
     ruta_misiones_canceladas,
+    ruta_prospectos,
     ruta_solicitud_calidad,
 )
 from voice_agent_panel import agenda, control, tailer
@@ -1003,6 +1005,40 @@ def pacientes(request: HttpRequest) -> HttpResponse:
     """
     historial = HistorialPacientes(ruta_historial(django_settings.DATA_DIR))
     return render(request, "panel/pacientes.html", {"fichas": historial.pacientes()})
+
+
+# --- Prospectos --------------------------------------------------------------
+
+
+def prospectos(request: HttpRequest) -> HttpResponse:
+    """El padrón comercial: quién ha hablado con la asesora y qué necesitaba.
+
+    Sale de la base SQLite que el agente escribe en el volumen compartido
+    (`data/prospectos/prospectos.sqlite3`); el panel solo lee, como con el
+    historial de pacientes. Si el fichero no existe todavía —perfil clínico
+    activo, o nadie ha llamado— la página sale vacía.
+    """
+    almacen = AlmacenProspectos(ruta_prospectos(django_settings.DATA_DIR))
+    return render(request, "panel/prospectos.html", {"fichas": almacen.prospectos()})
+
+
+def prospecto(request: HttpRequest, id_prospecto: str) -> HttpResponse:
+    """Todo lo de un prospecto en un sitio: identidad, conversaciones y briefs."""
+    almacen = AlmacenProspectos(ruta_prospectos(django_settings.DATA_DIR))
+    ficha = almacen.ficha(id_prospecto)
+    if ficha is None:
+        raise Http404("Ese prospecto no consta en el almacén.")
+    conversaciones = almacen.conversaciones(id_prospecto)
+    return render(
+        request,
+        "panel/prospecto.html",
+        {
+            "ficha": ficha,
+            "conversaciones": [
+                {"c": c, "brief": almacen.brief(c.id_conversacion)} for c in conversaciones
+            ],
+        },
+    )
 
 
 # --- Calidad -----------------------------------------------------------------

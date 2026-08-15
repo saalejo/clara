@@ -1,0 +1,37 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Prospecto{% endblock %}
+{% block contenido %}
+<h1>{% if ficha.prospecto.nombre or ficha.prospecto.empresa %}{{ ficha.prospecto.nombre }}{% if ficha.prospecto.nombre and ficha.prospecto.empresa %} — {% endif %}{{ ficha.prospecto.empresa }}{% else %}Prospecto sin identificar{% endif %}</h1>
+<p class="pie">
+  {% if ficha.prospecto.contacto %}Contacto: {{ ficha.prospecto.contacto }} · {% endif %}
+  Visto por primera vez el {{ ficha.prospecto.creado_en }} ·
+  {{ ficha.total_conversaciones }} conversaci{{ ficha.total_conversaciones|pluralize:"ón,ones" }} ·
+  <a href="{% url 'prospectos' %}">Volver al padrón</a></p>
+
+{% for fila in conversaciones %}
+<div class="tarjeta">
+  <p><strong>{{ fila.c.momento }}</strong>
+    <span class="ayuda">({{ fila.c.canal }})</span></p>
+  {% if fila.c.resumen %}
+  <p style="white-space:pre-wrap">{{ fila.c.resumen }}</p>
+  {% endif %}
+  {% if fila.brief %}
+  <h3>Brief</h3>
+  {% if fila.brief.empresa_y_contacto %}<p style="white-space:pre-wrap"><strong>Empresa y contacto:</strong> {{ fila.brief.empresa_y_contacto }}</p>{% endif %}
+  {% if fila.brief.necesidad %}<p style="white-space:pre-wrap"><strong>Necesidad:</strong> {{ fila.brief.necesidad }}</p>{% endif %}
+  {% if fila.brief.caso_de_uso %}<p style="white-space:pre-wrap"><strong>Caso de uso:</strong> {{ fila.brief.caso_de_uso }}</p>{% endif %}
+  {% if fila.brief.canales %}<p style="white-space:pre-wrap"><strong>Canales:</strong> {{ fila.brief.canales }}</p>{% endif %}
+  {% if fila.brief.integraciones %}<p style="white-space:pre-wrap"><strong>Integraciones:</strong> {{ fila.brief.integraciones }}</p>{% endif %}
+  {% if fila.brief.plazo_y_presupuesto %}<p style="white-space:pre-wrap"><strong>Plazo y presupuesto:</strong> {{ fila.brief.plazo_y_presupuesto }}</p>{% endif %}
+  {% if fila.brief.proximos_pasos %}<p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ fila.brief.proximos_pasos }}</p>{% endif %}
+  {% if fila.brief.notas %}<p style="white-space:pre-wrap"><strong>Notas:</strong> {{ fila.brief.notas }}</p>{% endif %}
+  {% endif %}
+  {% if fila.c.transcripcion %}
+  <details>
+    <summary>Transcripción</summary>
+    <p style="white-space:pre-wrap">{{ fila.c.transcripcion }}</p>
+  </details>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

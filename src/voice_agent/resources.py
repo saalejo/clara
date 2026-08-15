@@ -23,6 +23,7 @@ from voice_agent.traza import TrazaLlamada
 from voice_agent_core.config import Settings
 from voice_agent_core.evaluaciones import Alerta
 from voice_agent_core.historial import HistorialPacientes
+from voice_agent_core.prospectos import AlmacenProspectos
 
 
 @dataclass
@@ -78,3 +79,16 @@ class AppResources:
     #: pisa otra declaración del modelo, de modo que el dato del evento no se
     #: puede hablar para abrirlo.
     origen_procedimiento: str = ""
+    #: La memoria comercial entre conversaciones, o `None` en el perfil
+    #: clínico y en los tests. Que esté poblada es lo que pone al pipeline web
+    #: en modo prospectos (ver `web.modo_prospectos`).
+    prospectos: AlmacenProspectos | None = None
+    #: El id opaco del prospecto de esta conversación (la galleta del
+    #: navegador); vacío fuera del modo prospectos. Es lo que ata las
+    #: anotaciones del almacén a una ficha. La herramienta
+    #: `identificar_prospecto` puede cambiarlo en caliente al adoptar una
+    #: ficha existente.
+    id_prospecto: str = ""
+    #: Si el modelo llegó a guardar el brief con `guardar_brief`. Cuando no,
+    #: el cierre deja una nota en la conversación al desmontarse.
+    brief_guardado: bool = False

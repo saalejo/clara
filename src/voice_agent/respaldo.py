@@ -24,14 +24,20 @@ from voice_agent_core.evaluaciones import ResumenLlamada
 from voice_agent_core.rutas import dir_resumenes, escribir_json_atomico
 
 
-def transcripcion_de(contexto: LLMContext) -> list[str]:
-    """Extrae la conversación hablada del contexto, sin herramientas ni sistema."""
+def transcripcion_de(contexto: LLMContext, *, quien_habla: str = "paciente") -> list[str]:
+    """Extrae la conversación hablada del contexto, sin herramientas ni sistema.
+
+    Args:
+        contexto: El contexto del LLM al desmontar el pipeline.
+        quien_habla: La etiqueta del interlocutor humano en la transcripción:
+            "paciente" en el camino clínico, "visitante" en el comercial.
+    """
     lineas: list[str] = []
     for mensaje in contexto.messages:
         rol = mensaje.get("role") if isinstance(mensaje, dict) else None
         contenido = mensaje.get("content") if isinstance(mensaje, dict) else None
         if rol in ("user", "assistant") and isinstance(contenido, str) and contenido.strip():
-            quien = "paciente" if rol == "user" else "agente"
+            quien = quien_habla if rol == "user" else "agente"
             lineas.append(f"{quien}: {contenido.strip()}")
     return lineas
 
@@ -99,4 +105,32 @@ def resumen_de_respaldo(recursos: AppResources, contexto: LLMContext) -> None:
         logger.exception("No se pudo escribir el resumen de respaldo")
 
 
-__all__ = ["resumen_de_respaldo", "transcripcion_de"]
+def cierre_de_prospecto(recursos: AppResources, contexto: LLMContext) -> None:
+    """Anota la conversación comercial en el almacén, al desmontar el pipeline.
+
+    Es el equivalente en modo prospectos de `resumen_de_respaldo`, y más
+    sencillo a propósito: aquí no hay triaje que reconstruir. La transcripción
+    se guarda siempre que se habló algo; si el modelo no llegó a
+    `guardar_brief` —el visitante colgó sin despedirse— se deja un resumen
+    mínimo para que la ficha diga algo la próxima vez.
+
+    Nunca lanza: se ejecuta durante el desmontaje del pipeline y un fallo aquí
+    no debe enmascarar el motivo real del cierre.
+    """
+    try:
+        almacen = recursos.prospectos
+        id_conversacion = recursos.traza.id_llamada if recursos.traza else ""
+        if almacen is None or not id_conversacion:
+            return
+        transcripcion = transcripcion_de(contexto, quien_habla="visitante")
+        if not transcripcion:
+            return
+        almacen.anotar_transcripcion(id_conversacion, "\n".join(transcripcion))
+        if not recursos.brief_guardado:
+            almacen.anotar_resumen(id_conversacion, "Terminó sin brief; ver la transcripción.")
+        logger.info(f"Conversación de prospecto anotada: {id_conversacion}")
+    except Exception:
+        logger.exception("No se pudo anotar la conversación del prospecto")
+
+
+__all__ = ["cierre_de_prospecto", "resumen_de_respaldo", "transcripcion_de"]

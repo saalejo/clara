@@ -73,6 +73,10 @@ urlpatterns = [
         name="evaluacion_detalle",
     ),
     path("panel/pacientes/", views.pacientes, name="pacientes"),
+    # El id de un prospecto es el `uuid4().hex` de la galleta: slug puro, sin
+    # puntos ni barras, así que no hay traversal posible.
+    path("panel/prospectos/", views.prospectos, name="prospectos"),
+    path("panel/prospectos/<slug:id_prospecto>/", views.prospecto, name="prospecto"),
     path("panel/calidad/", views.calidad, name="calidad"),
     path("panel/calidad/lanzar/", views.calidad_lanzar, name="calidad_lanzar"),
     # `ejecucion/` va ANTES del slug del escenario para que no lo capture; los

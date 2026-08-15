@@ -25,6 +25,9 @@ NOMBRES_DE_SIEMPRE = {
     "estado_del_sistema",
     "guardar_respuestas",
     "historial_paciente",
+    "identificar_prospecto",
+    "guardar_brief",
+    "historial_prospecto",
 }
 
 
@@ -37,12 +40,12 @@ class TestElCatalogoNoCambia:
         activas = herramientas_activas(set())
         assert {nombre_de(h) for h in activas} == NOMBRES_DE_SIEMPRE
 
-    def test_el_registro_principal_sigue_teniendo_siete(self) -> None:
-        assert len(HERRAMIENTAS) == 7
+    def test_el_registro_principal_sigue_teniendo_diez(self) -> None:
+        assert len(HERRAMIENTAS) == 10
 
-    def test_con_telefonia_hay_catorce(self) -> None:
+    def test_con_telefonia_hay_diecisiete(self) -> None:
         activas = herramientas_activas(set(), incluir_telefonia=True)
-        assert len(activas) == 14
+        assert len(activas) == 17
         assert {nombre_de(h) for h in activas} > NOMBRES_DE_SIEMPRE
 
     def test_el_panel_puede_apagar_una_de_telefono(self) -> None:
@@ -56,7 +59,7 @@ class TestElCatalogoNoCambia:
         """Que nadie pueda mutar el registro por accidente."""
         activas = herramientas_activas(set(), incluir_telefonia=True)
         activas.clear()
-        assert len(HERRAMIENTAS) == 7
+        assert len(HERRAMIENTAS) == 10
 
 
 class TestElSondeo:

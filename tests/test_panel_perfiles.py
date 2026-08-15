@@ -28,7 +28,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def perfil() -> Perfil:
-    """El perfil "Por defecto" que siembra la migración, ya activo."""
+    """El perfil "Marketing" que siembra la migración, ya activo."""
     return cast(Perfil, Perfil.objects.get(activo=True))
 
 
@@ -56,8 +56,23 @@ def _sin_dbus(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- Modelo ------------------------------------------------------------------
 
 
-def test_la_migracion_siembra_el_perfil_por_defecto(perfil: Perfil) -> None:
-    assert perfil.nombre == "Por defecto"
+def test_la_migracion_deja_activo_el_perfil_marketing(perfil: Perfil) -> None:
+    from voice_agent_core.prompts import PROMPT_SISTEMA_MARKETING
+
+    assert perfil.nombre == "Marketing"
+    version = VersionPrompt.activa_de(perfil)
+    assert version is not None and version.prompt_sistema == PROMPT_SISTEMA_MARKETING
+    apagadas = {h.nombre for h in perfil.herramientas.filter(habilitada=False)}
+    assert "finalizar_llamada" in apagadas and "buscar_en_documentos" in apagadas
+
+
+def test_la_migracion_conserva_el_perfil_clinico_intacto_pero_inactivo() -> None:
+    # El clínico sigue existiendo tal cual era, con las herramientas
+    # comerciales apagadas: reactivarlo devuelve el agente de siempre.
+    clinico = Perfil.objects.get(nombre="Por defecto")
+    assert not clinico.activo
+    apagadas = {h.nombre for h in clinico.herramientas.filter(habilitada=False)}
+    assert {"identificar_prospecto", "guardar_brief", "historial_prospecto"} <= apagadas
 
 
 def test_activar_desactiva_el_anterior(perfil: Perfil) -> None:
@@ -76,10 +91,12 @@ def test_dos_activos_a_la_vez_no_caben(perfil: Perfil) -> None:
 
 
 def test_cada_perfil_tiene_su_version_activa(perfil: Perfil) -> None:
+    # El activo ya trae versión de la migración: la nueva se pone en vigor con
+    # `activar()`, como hace la vista, y no con `activa=True` a pelo.
     otro = Perfil.objects.create(nombre="Nocturno")
     VersionPrompt.objects.create(
-        perfil=perfil, prompt_sistema="diurno", saludo_inicial="hola", muletillas={}, activa=True
-    )
+        perfil=perfil, prompt_sistema="diurno", saludo_inicial="hola", muletillas={}
+    ).activar()
     VersionPrompt.objects.create(
         perfil=otro, prompt_sistema="nocturno", saludo_inicial="hola", muletillas={}, activa=True
     )
@@ -95,8 +112,7 @@ def test_duplicar_copia_todo_sin_activar(perfil: Perfil) -> None:
         alma="Parco.",
         saludo_inicial="hola",
         muletillas={},
-        activa=True,
-    )
+    ).activar()
     AjusteAgente.objects.create(perfil=perfil, clave="llm_temperature", valor="0.3")
     Herramienta.objects.create(perfil=perfil, nombre="estado_del_sistema", habilitada=False)
     servidor = ServidorMCP.objects.create(nombre="ficheros", transporte="stdio", comando="mcp-fs")
@@ -120,8 +136,8 @@ def test_duplicar_copia_todo_sin_activar(perfil: Perfil) -> None:
 def test_se_exporta_el_prompt_del_perfil_activo(perfil: Perfil) -> None:
     otro = Perfil.objects.create(nombre="Nocturno")
     VersionPrompt.objects.create(
-        perfil=perfil, prompt_sistema="diurno", saludo_inicial="hola", muletillas={}, activa=True
-    )
+        perfil=perfil, prompt_sistema="diurno", saludo_inicial="hola", muletillas={}
+    ).activar()
     VersionPrompt.objects.create(
         perfil=otro, prompt_sistema="nocturno", saludo_inicial="hola", muletillas={}, activa=True
     )
@@ -172,20 +188,20 @@ def test_activar_desde_la_vista(identificado: Client, perfil: Perfil) -> None:
 
 def test_seleccionar_cambia_lo_que_se_edita(identificado: Client, perfil: Perfil) -> None:
     # Con otro perfil seleccionado, la página del prompt siembra y edita el
-    # suyo, no el del activo.
+    # suyo, no el del activo — que conserva su versión de la migración.
     otro = Perfil.objects.create(nombre="Nocturno")
 
     identificado.post(reverse("perfil_seleccionar", args=[otro.pk]))
     identificado.get(reverse("prompt"))
 
     assert VersionPrompt.activa_de(otro) is not None
-    assert VersionPrompt.activa_de(perfil) is None
+    assert VersionPrompt.objects.filter(perfil=perfil).count() == 1
 
 
 def test_duplicar_desde_la_vista(identificado: Client, perfil: Perfil) -> None:
     identificado.post(reverse("perfil_duplicar", args=[perfil.pk]), {"nombre": ""})
 
-    assert Perfil.objects.filter(nombre="Por defecto (copia)").exists()
+    assert Perfil.objects.filter(nombre="Marketing (copia)").exists()
 
 
 def test_duplicar_con_nombre_repetido_avisa(identificado: Client, perfil: Perfil) -> None:
@@ -193,7 +209,7 @@ def test_duplicar_con_nombre_repetido_avisa(identificado: Client, perfil: Perfil
         reverse("perfil_duplicar", args=[perfil.pk]), {"nombre": "Por defecto"}, follow=True
     )
 
-    assert Perfil.objects.count() == 1
+    assert Perfil.objects.count() == 2  # Marketing y Por defecto, sin copia
     assert "Ya existe" in respuesta.content.decode()
 
 
@@ -207,6 +223,8 @@ def test_el_ultimo_perfil_no_se_borra(identificado: Client, perfil: Perfil) -> N
     otro = Perfil.objects.create(nombre="Nocturno")
     otro.activar()
     identificado.post(reverse("perfil_borrar", args=[perfil.pk]))
+    clinico = Perfil.objects.get(nombre="Por defecto")
+    identificado.post(reverse("perfil_borrar", args=[clinico.pk]))
 
     identificado.post(reverse("perfil_borrar", args=[otro.pk]))
 

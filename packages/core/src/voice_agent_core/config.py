@@ -168,9 +168,8 @@ class ModoTelefonia(StrEnum):
 class LLMBackend(StrEnum):
     """Proveedor del modelo de lenguaje.
 
-    El reto Clara 2026 restringe el modelo a familias concretas en su
-    nivel gratuito (compuerta G3 de la rúbrica: usar otro descalifica). El
-    resto del stack es libre.
+    Dos proveedores con nivel gratuito y endpoint OpenAI-compatible,
+    conmutables por configuración sin tocar código.
 
     Attributes:
         GEMINI: Google Gemini Flash por el endpoint OpenAI-compatible de
@@ -236,10 +235,9 @@ class Settings(BaseSettings):
     llm_backend: LLMBackend = Field(
         default=LLMBackend.GEMINI,
         description=(
-            "Proveedor del modelo de lenguaje, restringido a los permitidos "
-            "por el reto (compuerta G3). `gemini` por defecto; `groq` como "
-            "plan B si el nivel gratuito de Gemini se queda corto de "
-            "peticiones por minuto durante la demo."
+            "Proveedor del modelo de lenguaje. `gemini` por defecto; `groq` "
+            "como plan B si el nivel gratuito de Gemini se queda corto de "
+            "peticiones por minuto durante una demostración."
         ),
     )
     gemini_api_key: SecretStr | None = Field(
@@ -360,7 +358,7 @@ class Settings(BaseSettings):
         default="stun:stun.l.google.com:19302",
         description=(
             "Servidores ICE para la llamada por navegador, separados por "
-            "comas. Con el jurado en otra red hace falta añadir un servidor "
+            "comas. Con el visitante en otra red hace falta añadir un servidor "
             "TURN (el túnel de Cloudflare solo transporta la señalización "
             "HTTP, no la media UDP); sus credenciales van en TURN_USERNAME y "
             "TURN_CREDENTIAL y se aplican a las URLs turn:/turns:."
@@ -468,7 +466,7 @@ class Settings(BaseSettings):
         ge=0,
         description=(
             "Silencio absoluto tras el que se cuelga. Antes no había límite "
-            "('el jurado puede quedarse callado pensando'), pero una pestaña "
+            "('quien llama puede quedarse callado pensando'), pero una pestaña "
             "abierta y olvidada mantiene viva la conexión de streaming con "
             "Deepgram, que se factura por tiempo conectado. Cinco minutos "
             "sobran para pensar una respuesta. 0 lo desactiva."

@@ -337,7 +337,7 @@ def test_las_herramientas_de_telefono_no_estan_en_el_registro_principal() -> Non
     catálogo que ve el modelo es exactamente el de antes."""
     from voice_agent.tools import HERRAMIENTAS
 
-    assert len(HERRAMIENTAS) == 7
+    assert len(HERRAMIENTAS) == 10
     nombres = {f.__name__ for f in HERRAMIENTAS_TELEFONIA}
     assert nombres.isdisjoint({getattr(h, "__name__", "") for h in HERRAMIENTAS})
 

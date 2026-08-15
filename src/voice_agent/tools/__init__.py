@@ -23,6 +23,11 @@ from voice_agent.tools.evaluacion import finalizar_llamada, registrar_alerta
 from voice_agent.tools.historial import historial_paciente
 from voice_agent.tools.knowledge import buscar_en_documentos
 from voice_agent.tools.misiones import HERRAMIENTAS_AGENDA
+from voice_agent.tools.prospectos import (
+    guardar_brief,
+    historial_prospecto,
+    identificar_prospecto,
+)
 from voice_agent.tools.system import estado_del_sistema
 from voice_agent.tools.tareas import guardar_respuestas
 from voice_agent.tools.telefono import HERRAMIENTAS_TELEFONIA
@@ -38,6 +43,13 @@ HERRAMIENTAS: list[FunctionSchema | DirectFunction] = [
     estado_del_sistema,
     guardar_respuestas,
     historial_paciente,
+    # Las del perfil comercial. Van en el registro común y no tras una bandera
+    # como las de teléfono: qué perfil las ve lo deciden los interruptores del
+    # panel (la migración del perfil Marketing las apaga en el clínico y
+    # viceversa), no el código.
+    identificar_prospecto,
+    guardar_brief,
+    historial_prospecto,
 ]
 
 # Las de teléfono viven en `voice_agent.tools.telefono` y NO se añaden a la
@@ -135,9 +147,12 @@ __all__ = [
     "esquema_de",
     "estado_del_sistema",
     "finalizar_llamada",
+    "guardar_brief",
     "guardar_respuestas",
     "herramientas_activas",
     "historial_paciente",
+    "historial_prospecto",
+    "identificar_prospecto",
     "nombre_de",
     "obtener_fecha_hora",
     "registrar_alerta",

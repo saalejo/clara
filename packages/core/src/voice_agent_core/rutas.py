@@ -19,6 +19,7 @@ que un cambio de nombre no se convierta en una cacería.
     <DATA_DIR>/calidad/resultados/<id>.json  runner -> panel (expediente por ejecución)
     <DATA_DIR>/calidad/sandbox/<id>/         runner (data_dir aislado de cada ensayo)
     <DATA_DIR>/ingesta/progreso.json         ingesta -> panel (avance de la reindexación)
+    <DATA_DIR>/prospectos/prospectos.sqlite3 agente -> panel (memoria comercial)
 """
 
 from __future__ import annotations
@@ -153,6 +154,21 @@ def dir_trazas(data_dir: Path) -> Path:
 def ruta_historial(data_dir: Path) -> Path:
     """Base SQLite del historial de pacientes por número de teléfono."""
     return dir_evaluaciones(data_dir) / "historial.sqlite3"
+
+
+def dir_prospectos(data_dir: Path) -> Path:
+    """Carpeta de la memoria comercial: prospectos, conversaciones y briefs.
+
+    Va aparte de `evaluaciones/` a propósito: aquello es clínico y lo enseñan
+    las páginas de Evaluaciones y Pacientes; mezclar prospectos ahí los haría
+    parecer pacientes.
+    """
+    return data_dir / "prospectos"
+
+
+def ruta_prospectos(data_dir: Path) -> Path:
+    """Base SQLite de los prospectos, que el agente escribe y el panel lee."""
+    return dir_prospectos(data_dir) / "prospectos.sqlite3"
 
 
 def dir_calidad(data_dir: Path) -> Path:

@@ -1,0 +1,33 @@
+{% extends "panel/base.html" %}
+{% block titulo %}Prospectos{% endblock %}
+{% block contenido %}
+<h1>Prospectos</h1>
+<p class="pie">El padrón comercial: quién ha hablado con la asesora desde el
+  navegador, qué necesitaba y qué quedó acordado. El agente registra cada
+  conversación al montarla y le anota la transcripción y el brief según los
+  guarda; es lo que le permite retomar con quien vuelve. Vive en
+  <code>data/prospectos/prospectos.sqlite3</code>; el panel solo lee. Solo se
+  llena con el perfil comercial activo.</p>
+
+{% for f in fichas %}
+<div class="tarjeta">
+  <p><strong>{% if f.prospecto.nombre or f.prospecto.empresa %}{{ f.prospecto.nombre }}{% if f.prospecto.nombre and f.prospecto.empresa %} — {% endif %}{{ f.prospecto.empresa }}{% else %}Sin identificar{% endif %}</strong>
+    <span class="ayuda">({{ f.total_conversaciones }} conversaci{{ f.total_conversaciones|pluralize:"ón,ones" }})</span></p>
+  <p class="ayuda">Última: {{ f.ultima.momento }}
+    {% if f.prospecto.contacto %} · {{ f.prospecto.contacto }}{% endif %}</p>
+  {% if f.ultimo_brief %}
+  <p style="white-space:pre-wrap"><strong>Necesidad:</strong> {{ f.ultimo_brief.necesidad }}</p>
+  {% if f.ultimo_brief.proximos_pasos %}
+  <p style="white-space:pre-wrap"><strong>Próximos pasos:</strong> {{ f.ultimo_brief.proximos_pasos }}</p>
+  {% endif %}
+  {% elif f.ultima.resumen %}
+  <p style="white-space:pre-wrap">{{ f.ultima.resumen }}</p>
+  {% endif %}
+  <div class="acciones">
+    <a class="boton" href="{% url 'prospecto' f.prospecto.id %}">Ver ficha completa</a>
+  </div>
+</div>
+{% empty %}
+<p class="ayuda">Ninguno todavía: nadie ha hablado con la asesora comercial.</p>
+{% endfor %}
+{% endblock %}

@@ -182,7 +182,7 @@ _PLANTILLA = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Clara — acceso a la demostración</title>
+<title>Clara — habla con nuestra asesora</title>
 <style>
   :root {{ color-scheme: light dark; }}
   body {{ margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -207,22 +207,22 @@ _PLANTILLA = """<!doctype html>
 </head>
 <body>
 <main>
-  <h1>Clara — acceso a la demostración</h1>
-  <p class="apunte">Esta interfaz de voz corre en una placa con recursos
-  limitados y atiende una llamada cada vez, así que el acceso va con el código
-  del enlace que recibiste.</p>
+  <h1>Clara — habla con nuestra asesora</h1>
+  <p class="apunte">Clara es la demostración viva de los agentes de voz que
+  diseñamos en Voz Digital, y atiende una conversación cada vez: el acceso va
+  con el código del enlace que recibiste.</p>
   {aviso}
 {formulario}
 {pedir}
-  <footer>Seguimiento postoperatorio · voz-digital.com</footer>
+  <footer>Agentes de voz a medida · voz-digital.com</footer>
 </main>
 </body>
 </html>
 """
 
 
-def _es_https(peticion: Request) -> bool:
-    """Decide el flag `Secure` de la galleta leyendo la petición.
+def es_https(peticion: Request) -> bool:
+    """Decide el flag `Secure` de una galleta leyendo la petición.
 
     En la placa la conexión entra por el túnel: uvicorn la ve como `http` sobre
     loopback y el esquema real solo está en `X-Forwarded-Proto`, que pone
@@ -358,7 +358,7 @@ class PuertaDeAcceso:
             # sitios— y se vería la portada teniendo ya acceso. Lax no debilita
             # nada aquí: no hay ninguna acción con efectos que dispare un GET.
             samesite="lax",
-            secure=_es_https(peticion),
+            secure=es_https(peticion),
             path="/",
         )
         respuesta.headers["Cache-Control"] = "no-store"
@@ -393,6 +393,7 @@ __all__ = [
     "PuertaDeAcceso",
     "codigo_correcto",
     "enlace_de_whatsapp",
+    "es_https",
     "firmar",
     "galleta_valida",
     "pagina_de_puerta",
