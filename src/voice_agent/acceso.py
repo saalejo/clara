@@ -202,6 +202,7 @@ _PLANTILLA = """<!doctype html>
            cursor: pointer; }}
   .pedir {{ margin: 1.1rem 0 0; font-size: .92rem; }}
   .pedir a {{ color: #1f8a4c; font-weight: 600; }}
+  .apunte a, footer a {{ color: inherit; }}
   footer {{ margin-top: 1.75rem; font-size: .82rem; opacity: .6; }}
 </style>
 </head>
@@ -211,10 +212,16 @@ _PLANTILLA = """<!doctype html>
   <p class="apunte">Clara es la demostración viva de los agentes de voz que
   diseñamos en Voz Digital, y atiende una conversación cada vez: el acceso va
   con el código del enlace que recibiste.</p>
+  <p class="apunte">Al conectar, la llamada se transcribe para poder atenderte,
+  y usamos una cookie (<code>vd_prospecto</code>, 180 días) para reconocer tu
+  navegador si vuelves. Los detalles, en la
+  <a href="https://voz-digital.com/privacidad/">política de tratamiento de
+  datos</a>.</p>
   {aviso}
 {formulario}
 {pedir}
-  <footer>Agentes de voz a medida · voz-digital.com</footer>
+  <footer>Agentes de voz a medida · voz-digital.com ·
+    <a href="https://voz-digital.com/privacidad/">Política de datos</a></footer>
 </main>
 </body>
 </html>

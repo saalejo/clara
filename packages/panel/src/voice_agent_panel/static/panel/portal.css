@@ -283,6 +283,8 @@ h2::after {
   color: var(--grafito-suave);
 }
 
+.pie a { color: inherit; }
+
 /* --- WhatsApp flotante -----------------------------------------------------------
  * El mismo verde del enlace de la puerta de acceso, con el trazo de grafito de
  * las fichas para que no parezca pegado de otra página. */

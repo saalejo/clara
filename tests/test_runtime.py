@@ -37,6 +37,21 @@ def test_por_defecto_se_comporta_como_antes_del_panel() -> None:
     assert prompt.prompt_sistema_efectivo == PROMPT_SISTEMA
 
 
+def test_el_saludo_comercial_lleva_el_aviso_de_privacidad() -> None:
+    """El saludo es también el aviso de la Ley 1581 (arts. 9 y 12).
+
+    Quien lo reescriba tiene que conservar las tres piezas: que Clara es una
+    IA, que la conversación se graba/transcribe, y dónde está la política.
+    Sin ellas, la autorización por conducta inequívoca que registra
+    `cierre_de_prospecto` deja de estar informada.
+    """
+    from voice_agent_core.prompts import SALUDO_MARKETING
+
+    assert "inteligencia artificial" in SALUDO_MARKETING
+    assert "se graba" in SALUDO_MARKETING and "transcribe" in SALUDO_MARKETING
+    assert "privacidad" in SALUDO_MARKETING
+
+
 def test_las_muletillas_por_defecto_no_se_comparten() -> None:
     # Si el default no fuese una copia, editar las muletillas de una instancia
     # mutaría la constante del módulo para todo el proceso.

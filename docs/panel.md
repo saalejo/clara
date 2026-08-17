@@ -330,6 +330,25 @@ parecieran decir lo mismo—: cada ficha enlaza a **Evaluaciones ya filtrada por
 ese número**. Las llamadas de navegador, de número oculto o de aplicación no
 tienen ficha aquí, pero sí aparecen allí.
 
+### Prospectos
+
+El padrón comercial del modo prospectos: quién habló con la asesora, sus
+conversaciones con transcripción y el brief de cada una. Sale de
+`data/prospectos/prospectos.sqlite3`, que escribe el agente.
+
+Cada conversación enseña además su **registro de consentimiento** (Ley 1581):
+qué aviso de privacidad pronunció Clara, cuándo, y si el visitante siguió
+conversando después (conducta inequívoca). Las conversaciones anteriores a esa
+versión salen como «sin registro de aviso».
+
+La ficha tiene un botón **Suprimir este prospecto** —el derecho de supresión
+del art. 8— que borra ficha, conversaciones y briefs en cascada. Es la **única
+escritura del panel** en esa base: la doctrina de un fichero, un escritor se
+rompe aquí a propósito (escritura humana, rara y transaccional que el WAL
+serializa; la excepción está razonada en el docstring de `AlmacenProspectos`).
+La cookie sobrevive en el navegador del visitante: si vuelve, nace una ficha
+nueva y vacía.
+
 ### Calidad
 
 La sección Calidad ensaya a Clara contra ataques adversarios —inyección de

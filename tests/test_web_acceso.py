@@ -297,6 +297,16 @@ def test_sin_numero_la_portada_no_ofrece_nada() -> None:
     assert "WhatsApp" not in pagina_de_puerta()
 
 
+def test_la_portada_avisa_de_la_transcripcion_y_la_galleta() -> None:
+    # La portada es el aviso escrito de privacidad previo a conectar (Ley 1581
+    # arts. 9 y 12): la interfaz de llamada es un bundle precompilado que no se
+    # puede editar, así que si el aviso no está aquí, no está en ningún sitio.
+    pagina = pagina_de_puerta()
+    assert "se transcribe" in pagina
+    assert "vd_prospecto" in pagina
+    assert "https://voz-digital.com/privacidad/" in pagina
+
+
 def test_con_numero_la_portada_lo_ofrece() -> None:
     pagina = pagina_de_puerta(whatsapp=enlace_de_whatsapp("573046411802", "hola"))
     assert "Pídelo por WhatsApp" in pagina

@@ -286,6 +286,17 @@ def portal(request: HttpRequest) -> HttpResponse:
 
 
 @login_not_required
+def privacidad(request: HttpRequest) -> HttpResponse:
+    """La política de tratamiento de datos: pública y estática, como la portada.
+
+    Publicarla es una obligación legal (Ley 1581 de 2012 art. 25), así que la
+    página vive fuera del login y se sirve en cualquier host: la enlazan la
+    portada, la puerta de acceso de la interfaz de voz y el saludo de Clara.
+    """
+    return render(request, "panel/privacidad.html")
+
+
+@login_not_required
 def raiz(request: HttpRequest) -> HttpResponse:
     """Reparte la raíz según el host: portada en el dominio público, panel en el resto.
 
@@ -1039,6 +1050,23 @@ def prospecto(request: HttpRequest, id_prospecto: str) -> HttpResponse:
             ],
         },
     )
+
+
+@require_POST
+def prospecto_borrar(request: HttpRequest, id_prospecto: str) -> HttpResponse:
+    """Suprime la ficha entera a petición del titular (Ley 1581 art. 8).
+
+    Es la única escritura del panel en la base de prospectos: el borrado tiene
+    que hacerlo alguien que atienda la solicitud del titular, y ese alguien usa
+    el panel. La excepción a la doctrina de un fichero, un escritor está
+    razonada en el docstring de `AlmacenProspectos`.
+    """
+    almacen = AlmacenProspectos(ruta_prospectos(django_settings.DATA_DIR))
+    if almacen.borrar(id_prospecto):
+        messages.success(request, "Ficha suprimida: prospecto, conversaciones y briefs borrados.")
+    else:
+        messages.error(request, "No se pudo suprimir: la ficha no consta o la base falló.")
+    return redirect("prospectos")
 
 
 # --- Calidad -----------------------------------------------------------------

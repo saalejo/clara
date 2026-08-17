@@ -49,7 +49,10 @@ CREATE TABLE IF NOT EXISTS conversaciones (
     momento TEXT NOT NULL,
     canal TEXT NOT NULL DEFAULT 'web',
     resumen TEXT NOT NULL DEFAULT '',
-    transcripcion TEXT NOT NULL DEFAULT ''
+    transcripcion TEXT NOT NULL DEFAULT '',
+    aviso_texto TEXT NOT NULL DEFAULT '',
+    aviso_momento TEXT NOT NULL DEFAULT '',
+    consentimiento TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_conversaciones_prospecto
     ON conversaciones (id_prospecto, momento);
@@ -79,7 +82,13 @@ CREATE TABLE IF NOT EXISTS briefs (
 #: `historial._COLUMNAS_AÑADIDAS`, que ya mordió).
 _COLUMNAS_AÑADIDAS: dict[str, tuple[tuple[str, str], ...]] = {
     "prospectos": (),
-    "conversaciones": (),
+    "conversaciones": (
+        # El registro del consentimiento (D. 1377 arts. 7-8): qué aviso se
+        # pronunció, cuándo, y si el visitante siguió conversando después.
+        ("aviso_texto", "TEXT NOT NULL DEFAULT ''"),
+        ("aviso_momento", "TEXT NOT NULL DEFAULT ''"),
+        ("consentimiento", "TEXT NOT NULL DEFAULT ''"),
+    ),
     "briefs": (),
 }
 
@@ -113,7 +122,17 @@ class Prospecto(BaseModel):
 
 
 class ConversacionProspecto(BaseModel):
-    """Una conversación del registro, con lo que se le fue anotando."""
+    """Una conversación del registro, con lo que se le fue anotando.
+
+    Attributes:
+        aviso_texto: El texto exacto del aviso de privacidad que se pronunció
+            al empezar — el texto y no una versión, porque el saludo es
+            editable desde el panel y una constante mentiría sobre lo que de
+            verdad se dijo. Vacío: no hubo aviso (conversaciones anteriores).
+        aviso_momento: Cuándo se pronunció, en ISO. Vacío si no hubo.
+        consentimiento: `"conducta_inequivoca"` si el visitante siguió
+            conversando tras el aviso (D. 1377 art. 7); vacío si no habló.
+    """
 
     id_conversacion: str
     id_prospecto: str
@@ -121,6 +140,9 @@ class ConversacionProspecto(BaseModel):
     canal: str = "web"
     resumen: str = ""
     transcripcion: str = ""
+    aviso_texto: str = ""
+    aviso_momento: str = ""
+    consentimiento: str = ""
 
 
 class Brief(BaseModel):
@@ -173,8 +195,11 @@ class AlmacenProspectos:
     fila y lecturas de pocas, y así el objeto se puede compartir entre las
     herramientas sin arrastrar una conexión viva entre tareas de asyncio. El
     panel, en otro proceso, lee el mismo fichero; el modo WAL deja convivir a
-    ambos. El agente es el único escritor (doctrina de un fichero, un
-    escritor): el panel no escribe aquí nunca.
+    ambos. El agente es el único escritor habitual (doctrina de un fichero, un
+    escritor), con una única excepción deliberada: `borrar`, que ejerce el
+    panel — la supresión del art. 8 de la Ley 1581 es una escritura humana,
+    rara y transaccional que el WAL serializa sin drama, y un tombstone no
+    cumpliría (el dato tiene que desaparecer de verdad).
     """
 
     def __init__(self, ruta: Path) -> None:
@@ -380,6 +405,76 @@ class AlmacenProspectos:
         except (sqlite3.Error, OSError) as e:
             logger.error(f"[prospectos] no pude anotar el resumen de {id_conversacion}: {e}")
 
+    def anotar_aviso(
+        self, id_conversacion: str, texto: str, *, momento: datetime | None = None
+    ) -> None:
+        """Deja constancia del aviso de privacidad, al pronunciarlo.
+
+        Se anota en el momento de hablar y no al colgar: el hecho que hay que
+        poder probar (D. 1377 art. 8) es que el aviso sonó antes de recolectar
+        nada, y una llamada que se corta a medias no debe perderlo.
+        """
+        if not id_conversacion.strip() or not texto.strip():
+            return
+        cuando = (momento or datetime.now()).isoformat(timespec="seconds")
+        try:
+            with self._conexion() as conexion:
+                conexion.execute(
+                    "UPDATE conversaciones SET aviso_texto = ?, aviso_momento = ? "
+                    "WHERE id_conversacion = ?",
+                    (texto, cuando, id_conversacion),
+                )
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[prospectos] no pude anotar el aviso de {id_conversacion}: {e}")
+
+    def anotar_consentimiento(self, id_conversacion: str) -> None:
+        """Anota que el visitante siguió conversando tras el aviso.
+
+        Es la conducta inequívoca del D. 1377 art. 7. Solo se anota sobre una
+        conversación con aviso registrado: sin aviso previo no hay
+        consentimiento que reclamar, y dejarlo escrito sería mentir.
+        """
+        try:
+            with self._conexion() as conexion:
+                conexion.execute(
+                    "UPDATE conversaciones SET consentimiento = 'conducta_inequivoca' "
+                    "WHERE id_conversacion = ? AND aviso_momento != ''",
+                    (id_conversacion,),
+                )
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[prospectos] no pude anotar el consentimiento de {id_conversacion}: {e}")
+
+    # --- Supresión (el panel, a petición del titular) -------------------------
+
+    def borrar(self, id_prospecto: str) -> bool:
+        """Suprime la ficha entera: prospecto, conversaciones y briefs.
+
+        Es el derecho de supresión del art. 8 de la Ley 1581, y la única
+        escritura que hace el panel en esta base (ver el docstring de la
+        clase). La cascada es manual porque el esquema no declara claves
+        foráneas — como en el resto del fichero.
+
+        Returns:
+            `True` si la ficha existía y quedó borrada; `False` si no constaba
+            o la base falló (se anota en el log, nunca lanza).
+        """
+        if not id_prospecto.strip():
+            return False
+        try:
+            with self._conexion() as conexion:
+                conexion.execute("DELETE FROM briefs WHERE id_prospecto = ?", (id_prospecto,))
+                conexion.execute(
+                    "DELETE FROM conversaciones WHERE id_prospecto = ?", (id_prospecto,)
+                )
+                cursor = conexion.execute("DELETE FROM prospectos WHERE id = ?", (id_prospecto,))
+                borrado = cursor.rowcount > 0
+            if borrado:
+                logger.info(f"[prospectos] ficha {id_prospecto} suprimida a petición del titular")
+            return borrado
+        except (sqlite3.Error, OSError) as e:
+            logger.error(f"[prospectos] no pude suprimir la ficha {id_prospecto}: {e}")
+            return False
+
     # --- Lectura (el agente al montar, las herramientas y el panel) -----------
 
     def ficha(self, id_prospecto: str) -> FichaProspecto | None:
@@ -498,6 +593,7 @@ class AlmacenProspectos:
             SELECT p.id, p.nombre, p.empresa, p.contacto, p.creado_en, p.actualizado_en,
                    c.total,
                    u.id_conversacion, u.momento, u.canal, u.resumen, u.transcripcion,
+                   u.aviso_texto, u.aviso_momento, u.consentimiento,
                    b.id_conversacion, b.id_prospecto, b.momento, b.empresa_y_contacto,
                    b.necesidad, b.caso_de_uso, b.canales, b.integraciones,
                    b.plazo_y_presupuesto, b.proximos_pasos, b.notas
@@ -533,8 +629,11 @@ class AlmacenProspectos:
                     canal=fila[9],
                     resumen=fila[10],
                     transcripcion=fila[11],
+                    aviso_texto=fila[12],
+                    aviso_momento=fila[13],
+                    consentimiento=fila[14],
                 ),
-                ultimo_brief=self._a_brief(fila[12:23]) if fila[12] is not None else None,
+                ultimo_brief=self._a_brief(fila[15:26]) if fila[15] is not None else None,
             )
             for fila in filas
         ]
@@ -594,7 +693,8 @@ class AlmacenProspectos:
         limite: int,
     ) -> list[ConversacionProspecto]:
         filas = conexion.execute(
-            "SELECT id_conversacion, id_prospecto, momento, canal, resumen, transcripcion "
+            "SELECT id_conversacion, id_prospecto, momento, canal, resumen, transcripcion, "
+            "aviso_texto, aviso_momento, consentimiento "
             f"FROM conversaciones {condicion} ORDER BY momento DESC LIMIT ?",
             (*parametros, limite),
         ).fetchall()
@@ -606,6 +706,9 @@ class AlmacenProspectos:
                 canal=fila[3],
                 resumen=fila[4],
                 transcripcion=fila[5],
+                aviso_texto=fila[6],
+                aviso_momento=fila[7],
+                consentimiento=fila[8],
             )
             for fila in filas
         ]

@@ -66,6 +66,18 @@ def test_la_migracion_deja_activo_el_perfil_marketing(perfil: Perfil) -> None:
     assert "finalizar_llamada" in apagadas and "buscar_en_documentos" in apagadas
 
 
+def test_el_saludo_activo_lleva_el_aviso_de_privacidad(perfil: Perfil) -> None:
+    # En una base fresca lo siembra 0007 con la constante ya avisada; en la de
+    # la placa lo repone la 0008 si el saludo de fábrica no se había editado.
+    # En ambos caminos, la versión activa tiene que avisar.
+    from voice_agent_core.prompts import SALUDO_MARKETING
+
+    version = VersionPrompt.activa_de(perfil)
+    assert version is not None
+    assert version.saludo_inicial == SALUDO_MARKETING
+    assert "inteligencia artificial" in version.saludo_inicial
+
+
 def test_la_migracion_conserva_el_perfil_clinico_intacto_pero_inactivo() -> None:
     # El clínico sigue existiendo tal cual era, con las herramientas
     # comerciales apagadas: reactivarlo devuelve el agente de siempre.

@@ -525,6 +525,16 @@ async def _conversar(
             # saludo en el historial para que la conversación sea coherente.
             logger.info("Cliente WebRTC conectado; saludando")
             await worker.queue_frames([TTSSpeakFrame(text=saludo, append_to_context=True)])
+            # El registro del aviso de privacidad (D. 1377 art. 8) se anota al
+            # pronunciarlo, no al colgar: es el hecho que hay que poder probar
+            # aunque la llamada se corte a medias. El texto exacto y no una
+            # versión: el saludo es editable desde el panel.
+            if (
+                recursos is not None
+                and recursos.prospectos is not None
+                and recursos.traza is not None
+            ):
+                recursos.prospectos.anotar_aviso(recursos.traza.id_llamada, saludo)
 
         @transporte.event_handler("on_client_disconnected")  # type: ignore[untyped-decorator]
         async def _colgar(_transporte: SmallWebRTCTransport, _cliente: Any) -> None:
@@ -719,7 +729,9 @@ def crear_app(settings: Settings | None = None) -> FastAPI:
     else:
         logger.warning(
             "WEB_CODIGO_ACCESO está vacío: la interfaz de llamada queda ABIERTA a "
-            "cualquiera que conozca la URL. En la placa esto no debería pasar."
+            "cualquiera que conozca la URL, y sin la portada de la puerta tampoco "
+            "hay aviso escrito de privacidad antes de conectar (queda solo el "
+            "hablado del saludo). En la placa esto no debería pasar."
         )
 
     # `response_model=None` es obligatorio: el tipo de retorno es una unión con

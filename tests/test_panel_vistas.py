@@ -115,6 +115,32 @@ def test_la_raiz_sigue_mandando_al_panel_en_los_demas_hosts(client: Client) -> N
     assert respuesta["Location"] == "/panel/"
 
 
+def test_la_politica_de_datos_es_publica(client: Client) -> None:
+    # Publicarla es la obligación del art. 25 de la Ley 1581: sin login y con
+    # lo que la hace política — responsable, encargados, cookie y derechos.
+    cuerpo = client.get(reverse("privacidad")).content.decode()
+
+    assert "Sistemas Agapanto S.A.S." in cuerpo
+    assert "901.305.572" in cuerpo
+    assert "Deepgram" in cuerpo
+    assert "vd_prospecto" in cuerpo
+    assert "suprimamos" in cuerpo
+    assert "comunicaciones@agapanto.com.co" in cuerpo
+
+
+def test_la_politica_tambien_se_sirve_en_el_dominio_publico(client: Client) -> None:
+    from django.test import override_settings
+
+    with override_settings(ALLOWED_HOSTS=["voz-digital.com"]):
+        respuesta = client.get("/privacidad/", HTTP_HOST="voz-digital.com")
+    assert respuesta.status_code == 200
+
+
+def test_la_portada_enlaza_la_politica(client: Client) -> None:
+    cuerpo = client.get(reverse("portal")).content.decode()
+    assert reverse("privacidad") in cuerpo
+
+
 @pytest.mark.parametrize("nombre", RUTAS_PRIVADAS_POST)
 def test_las_acciones_tambien_estan_cerradas(client: Client, nombre: str) -> None:
     # El middleware corre antes que `@require_POST`, así que un anónimo se topa

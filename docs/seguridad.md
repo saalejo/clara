@@ -81,6 +81,14 @@ dejar fuera a quien tiene que hacer la demostración. El arranque lo avisa con
 un `warning` en el log, y es lo que mantiene `make run-web` usable en local sin
 ceremonia.
 
+La portada de la puerta cumple además otro papel desde el 16-ago-2026: es el
+**aviso escrito de privacidad** previo a conectar (la transcripción de la
+llamada y la cookie `vd_prospecto`, con enlace a la política en
+voz-digital.com/privacidad). La interfaz de llamada en sí es un bundle
+precompilado que no se puede editar, así que sin la puerta montada no hay
+aviso escrito — queda solo el hablado del saludo de Clara. En producción,
+`WEB_CODIGO_ACCESO` tiene que estar puesto también por esto.
+
 ## Los límites que protegen la placa
 
 Todos en `Settings`, todos ajustables desde el panel salvo el código:

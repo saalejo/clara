@@ -12,6 +12,21 @@
 <div class="tarjeta">
   <p><strong>{{ fila.c.momento }}</strong>
     <span class="ayuda">({{ fila.c.canal }})</span></p>
+  {% if fila.c.aviso_momento %}
+    {% if fila.c.consentimiento %}
+    <p class="ayuda">Aviso de privacidad pronunciado el {{ fila.c.aviso_momento }} ·
+      el visitante continuó la conversación (consentimiento por conducta inequívoca).</p>
+    {% else %}
+    <p class="ayuda">Aviso de privacidad pronunciado el {{ fila.c.aviso_momento }};
+      el visitante no llegó a hablar.</p>
+    {% endif %}
+  <details>
+    <summary class="ayuda">Texto del aviso</summary>
+    <p style="white-space:pre-wrap">{{ fila.c.aviso_texto }}</p>
+  </details>
+  {% else %}
+  <p class="ayuda">Sin registro de aviso de privacidad (conversación anterior a esta versión).</p>
+  {% endif %}
   {% if fila.c.resumen %}
   <p style="white-space:pre-wrap">{{ fila.c.resumen }}</p>
   {% endif %}
@@ -34,4 +49,11 @@
   {% endif %}
 </div>
 {% endfor %}
+
+<h3>Suprimir</h3>
+<p class="ayuda">Borra la ficha, sus conversaciones y sus briefs — el derecho de
+supresión de la Ley 1581. Si el visitante vuelve, su navegador crea una ficha
+nueva y vacía (la cookie sobrevive en su navegador).</p>
+<form method="post" action="{% url 'prospecto_borrar' ficha.prospecto.id %}">{% csrf_token %}
+  <button class="peligro" type="submit">Suprimir este prospecto</button></form>
 {% endblock %}

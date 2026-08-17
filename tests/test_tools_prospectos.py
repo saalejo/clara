@@ -217,6 +217,42 @@ class TestElCierreComercial:
         conversacion = recursos.prospectos.conversacion("conv-actual")
         assert conversacion is not None and conversacion.transcripcion == ""
 
+    def test_si_el_visitante_hablo_tras_el_aviso_queda_el_consentimiento(
+        self, tmp_path: Path
+    ) -> None:
+        # La conducta inequívoca del D. 1377 art. 7: aviso pronunciado y el
+        # visitante siguió conversando.
+        params = _params(tmp_path)
+        recursos: AppResources = params.app_resources
+        assert recursos.prospectos is not None
+        recursos.prospectos.registrar_conversacion("conv-actual", ID)
+        recursos.prospectos.anotar_aviso("conv-actual", "Le aviso que esto se graba")
+
+        contexto = LLMContext(messages=[{"role": "user", "content": "Tengo una óptica."}])
+        cierre_de_prospecto(recursos, contexto)
+
+        conversacion = recursos.prospectos.conversacion("conv-actual")
+        assert conversacion is not None
+        assert conversacion.consentimiento == "conducta_inequivoca"
+
+    def test_si_solo_hablo_clara_no_hay_consentimiento(self, tmp_path: Path) -> None:
+        # El saludo entra al contexto con `append_to_context`: la transcripción
+        # nunca está vacía, y eso no puede bastar como conducta inequívoca.
+        params = _params(tmp_path)
+        recursos: AppResources = params.app_resources
+        assert recursos.prospectos is not None
+        recursos.prospectos.registrar_conversacion("conv-actual", ID)
+        recursos.prospectos.anotar_aviso("conv-actual", "Le aviso que esto se graba")
+
+        contexto = LLMContext(
+            messages=[{"role": "assistant", "content": "Buenas, le habla Clara."}]
+        )
+        cierre_de_prospecto(recursos, contexto)
+
+        conversacion = recursos.prospectos.conversacion("conv-actual")
+        assert conversacion is not None
+        assert conversacion.consentimiento == ""
+
 
 class TestLaGalleta:
     def test_una_galleta_legitima_se_respeta(self) -> None:

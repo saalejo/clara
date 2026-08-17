@@ -126,6 +126,13 @@ def cierre_de_prospecto(recursos: AppResources, contexto: LLMContext) -> None:
         if not transcripcion:
             return
         almacen.anotar_transcripcion(id_conversacion, "\n".join(transcripcion))
+        # Que el VISITANTE haya hablado tras el aviso del saludo es la conducta
+        # inequívoca del D. 1377 art. 7 — el saludo de Clara solo, no: con
+        # `append_to_context` la transcripción nunca está vacía. El almacén
+        # además solo lo anota si el aviso quedó registrado (sin aviso previo
+        # no hay consentimiento que valga).
+        if any(linea.startswith("visitante:") for linea in transcripcion):
+            almacen.anotar_consentimiento(id_conversacion)
         if not recursos.brief_guardado:
             almacen.anotar_resumen(id_conversacion, "Terminó sin brief; ver la transcripción.")
         logger.info(f"Conversación de prospecto anotada: {id_conversacion}")

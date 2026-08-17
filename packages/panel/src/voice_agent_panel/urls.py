@@ -17,6 +17,7 @@ urlpatterns = [
     # redirección al panel en el resto. Ver `views.raiz`.
     path("", views.raiz, name="raiz"),
     path("portal/", views.portal, name="portal"),
+    path("privacidad/", views.privacidad, name="privacidad"),
     path("healthz", views.healthz, name="healthz"),
     path("panel/", views.panel, name="panel"),
     # El nombre "login" es el que usan LOGIN_URL y los reverse de los tests.
@@ -77,6 +78,11 @@ urlpatterns = [
     # puntos ni barras, así que no hay traversal posible.
     path("panel/prospectos/", views.prospectos, name="prospectos"),
     path("panel/prospectos/<slug:id_prospecto>/", views.prospecto, name="prospecto"),
+    path(
+        "panel/prospectos/<slug:id_prospecto>/borrar/",
+        views.prospecto_borrar,
+        name="prospecto_borrar",
+    ),
     path("panel/calidad/", views.calidad, name="calidad"),
     path("panel/calidad/lanzar/", views.calidad_lanzar, name="calidad_lanzar"),
     # `ejecucion/` va ANTES del slug del escenario para que no lo capture; los

@@ -1,0 +1,136 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voz Digital — política de tratamiento de datos</title>
+  <meta name="description" content="Política de tratamiento de datos personales de Voz Digital: qué datos trata Clara, para qué, a dónde viajan y cómo ejercer tus derechos.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text x='0' y='13' font-size='13'>✏️</text></svg>">
+  <link rel="stylesheet" href="{% static 'panel/portal.css' %}">
+  <style>
+    /* Prosa larga que la portada no necesita: solo lo que falta en portal.css. */
+    .politica { max-width: 46rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; }
+    .politica h2 { margin-top: 2.5rem; }
+    .politica p, .politica li { line-height: 1.6; }
+    .politica ul { padding-left: 1.4rem; }
+    .politica a { color: var(--acento); }
+    .fechas { color: var(--grafito-suave); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="cabecera">
+    <span class="marca"><a href="{% url 'raiz' %}" style="color:inherit;text-decoration:none">Voz Digital</a></span>
+    <span class="insignia"><span class="estrella" aria-hidden="true">✦</span> agentes de voz a medida</span>
+  </header>
+
+  <main class="politica">
+    <h1>Política de tratamiento de datos personales</h1>
+    <p class="fechas">Vigente desde el 16 de agosto de 2026 · Última actualización: 16 de agosto de 2026</p>
+    <p class="parrafo">
+      Esta política explica qué datos personales trata Voz Digital cuando
+      hablas con Clara —nuestra asesora, que es un agente de inteligencia
+      artificial— o usas este sitio, para qué los usamos, a dónde viajan y
+      cómo ejercer tus derechos. La escribimos para cumplir la Ley 1581 de
+      2012 y el Decreto 1377 de 2013, y sobre todo para que se entienda.
+    </p>
+
+    <h2>Quién responde por tus datos</h2>
+    <p>
+      El responsable del tratamiento es <strong>Sistemas Agapanto S.A.S.</strong>
+      (NIT 901.305.572), que opera en Colombia como <strong>Voz Digital</strong>.
+      Para cualquier asunto sobre tus datos, escribe a
+      <a href="mailto:comunicaciones@agapanto.com.co">comunicaciones@agapanto.com.co</a>.
+    </p>
+
+    <h2>Qué datos tratamos</h2>
+    <ul>
+      <li><strong>Tu voz, solo en tránsito.</strong> Lo que dices se convierte a
+        texto al instante para que Clara pueda responderte. <strong>No
+        almacenamos el audio</strong> de las conversaciones.</li>
+      <li><strong>La transcripción de la conversación</strong>, que se conserva
+        como memoria de lo hablado.</li>
+      <li><strong>Lo que tú cuentes de ti</strong>: tu nombre, tu negocio y los
+        datos de contacto que decidas dar, junto con el resumen de necesidades
+        (el «brief») que Clara prepara.</li>
+      <li><strong>Una cookie llamada <code>vd_prospecto</code></strong>: un
+        identificador aleatorio, sin datos dentro, que dura 180 días y sirve
+        para que Clara reconozca tu navegador si vuelves.</li>
+      <li><strong>Metadatos técnicos</strong> de cada conversación: fecha, hora
+        y canal.</li>
+    </ul>
+
+    <h2>Para qué los usamos</h2>
+    <ul>
+      <li>Atender la conversación comercial y responder lo que preguntes.</li>
+      <li>Recordar lo conversado si vuelves, para no empezar de cero.</li>
+      <li>Preparar y enviarte una propuesta de agente a medida.</li>
+      <li>Mejorar el servicio a partir de lo conversado.</li>
+    </ul>
+    <p>
+      Al comenzar cada llamada, Clara avisa que es una inteligencia artificial
+      y que la conversación se transcribe; continuar la conversación tras el
+      aviso constituye tu autorización (Decreto 1377 de 2013, art. 7), y
+      dejamos constancia del aviso y del momento en que se dio.
+    </p>
+
+    <h2>A dónde viajan</h2>
+    <p>
+      Para funcionar, Clara usa servicios de proveedores en Estados Unidos
+      —país con nivel adecuado de protección declarado por la
+      Superintendencia de Industria y Comercio (Circular 005 de 2017)— que
+      actúan por cuenta nuestra como encargados del tratamiento:
+    </p>
+    <ul>
+      <li><strong>Deepgram</strong>, que convierte tu voz en texto.</li>
+      <li><strong>Google AI Studio</strong> y <strong>Groq</strong>, los
+        modelos de lenguaje con los que Clara conversa.</li>
+    </ul>
+    <p>
+      Reciben los datos para prestar el servicio, no para entrenar sus modelos
+      ni para fines propios.
+    </p>
+
+    <h2>La cookie</h2>
+    <p>
+      <code>vd_prospecto</code> es la única cookie de seguimiento del servicio:
+      un identificador aleatorio que tu navegador guarda 180 días y que enlaza
+      tus conversaciones con tu ficha. Si la borras desde tu navegador, el
+      enlace desaparece y la próxima visita empieza con una ficha nueva.
+    </p>
+
+    <h2>Tus derechos</h2>
+    <p>
+      Como titular de tus datos puedes, en cualquier momento y sin costo
+      (Ley 1581 de 2012, art. 8):
+    </p>
+    <ul>
+      <li>Conocer qué datos tenemos tuyos y pedir copia.</li>
+      <li>Actualizarlos o corregirlos.</li>
+      <li>Pedir que los suprimamos por completo: borramos tu ficha, tus
+        conversaciones y tu brief.</li>
+      <li>Revocar la autorización que diste.</li>
+    </ul>
+    <p>
+      Para ejercerlos, escribe a
+      <a href="mailto:comunicaciones@agapanto.com.co">comunicaciones@agapanto.com.co</a>
+      desde el correo que quieras que asociemos a la solicitud, contándonos qué
+      necesitas. Respondemos dentro de los plazos de ley (diez días hábiles
+      para consultas, quince para reclamos). Si consideras que no atendimos tu
+      solicitud, puedes quejarte ante la
+      <a href="https://www.sic.gov.co" rel="noopener noreferrer">Superintendencia
+      de Industria y Comercio</a>.
+    </p>
+
+    <h2>Cambios a esta política</h2>
+    <p>
+      Si esta política cambia, publicaremos aquí la versión nueva con su fecha.
+      Los cambios de fondo se avisarán además en la conversación.
+    </p>
+  </main>
+
+  <footer class="pie">
+    <p>Voz Digital · Colombia · voz-digital.com</p>
+  </footer>
+</body>
+</html>

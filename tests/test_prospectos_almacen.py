@@ -122,6 +122,101 @@ class TestElRegistro:
         assert not almacen.guardar_brief("conv-1", ID, necesidad="x")
 
 
+class TestElConsentimiento:
+    """El registro textual del aviso de privacidad (D. 1377 arts. 7-8)."""
+
+    def test_el_aviso_queda_con_texto_y_momento(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.anotar_aviso(
+            "conv-1", "Le aviso que esto se graba", momento=datetime(2026, 8, 16, 10, 0)
+        )
+
+        conversacion = almacen.conversacion("conv-1")
+        assert conversacion is not None
+        assert conversacion.aviso_texto == "Le aviso que esto se graba"
+        assert conversacion.aviso_momento == "2026-08-16T10:00:00"
+        assert conversacion.consentimiento == ""
+
+    def test_el_consentimiento_se_anota_tras_el_aviso(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.anotar_aviso("conv-1", "Le aviso que esto se graba")
+        almacen.anotar_consentimiento("conv-1")
+
+        conversacion = almacen.conversacion("conv-1")
+        assert conversacion is not None
+        assert conversacion.consentimiento == "conducta_inequivoca"
+
+    def test_sin_aviso_previo_no_hay_consentimiento(self, tmp_path: Path) -> None:
+        # Dejar escrito un consentimiento sin aviso previo sería mentir.
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.anotar_consentimiento("conv-1")
+
+        conversacion = almacen.conversacion("conv-1")
+        assert conversacion is not None
+        assert conversacion.consentimiento == ""
+
+    def test_un_aviso_vacio_no_anota_nada(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.anotar_aviso("conv-1", "   ")
+
+        conversacion = almacen.conversacion("conv-1")
+        assert conversacion is not None
+        assert conversacion.aviso_momento == ""
+
+    def test_el_registro_sale_en_el_padron(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.anotar_aviso("conv-1", "Le aviso que esto se graba")
+        almacen.anotar_consentimiento("conv-1")
+
+        (ficha,) = almacen.prospectos()
+        assert ficha.ultima.aviso_texto == "Le aviso que esto se graba"
+        assert ficha.ultima.consentimiento == "conducta_inequivoca"
+
+
+class TestLaSupresion:
+    """El derecho de supresión del art. 8: la única escritura del panel."""
+
+    def test_borra_la_ficha_con_todo_lo_suyo(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        almacen.identificar(ID, nombre="Marta Ruiz")
+        almacen.guardar_brief("conv-1", ID, necesidad="citas por voz")
+        almacen.anotar_transcripcion("conv-1", "visitante: Hola")
+
+        assert almacen.borrar(ID)
+
+        assert almacen.ficha(ID) is None
+        assert almacen.conversacion("conv-1") is None
+        assert almacen.brief("conv-1") is None
+        assert almacen.prospectos() == []
+
+    def test_no_toca_a_los_demas(self, tmp_path: Path) -> None:
+        almacen = almacen_en(tmp_path)
+        registrar(almacen)
+        registrar(almacen, "conv-ajena", "otro-id")
+
+        assert almacen.borrar(ID)
+
+        assert almacen.conversacion("conv-ajena") is not None
+
+    def test_una_ficha_inexistente_devuelve_false(self, tmp_path: Path) -> None:
+        assert not almacen_en(tmp_path).borrar("desconocido")
+
+    def test_un_id_vacio_devuelve_false(self, tmp_path: Path) -> None:
+        assert not almacen_en(tmp_path).borrar("  ")
+
+    def test_una_base_corrupta_devuelve_false_sin_lanzar(self, tmp_path: Path) -> None:
+        ruta = tmp_path / "prospectos.sqlite3"
+        ruta.write_bytes(b"esto no es una base sqlite, pero pesa mas de cien bytes" * 3)
+
+        assert not AlmacenProspectos(ruta).borrar(ID)
+
+
 class TestLaIdentidad:
     def test_encuentra_por_empresa_y_nombre(self, tmp_path: Path) -> None:
         almacen = almacen_en(tmp_path)
@@ -243,9 +338,42 @@ class TestLaMigracionDeColumnas:
         assert ficha is not None, "la conversación de antes de la migración se perdió"
         assert ficha.ultima.resumen == "retomado tras la migración"
 
+    def test_las_columnas_del_consentimiento_llegan_a_una_base_vieja(self, tmp_path: Path) -> None:
+        """Las columnas reales de `_COLUMNAS_AÑADIDAS`, no una simulada.
 
-#: La tabla `conversaciones` como habría nacido sin la columna `resumen`, más
-#: las otras dos al día: solo se ensaya la mecánica del ALTER por tabla.
+        La base de la placa nació sin `aviso_texto`/`aviso_momento`/
+        `consentimiento` (el esquema viejo de aquí abajo tampoco las tiene):
+        este test comprueba que el mecanismo las repone de verdad y que la
+        anotación funciona sobre una conversación anterior a la migración.
+        """
+        ruta = tmp_path / "prospectos.sqlite3"
+        with sqlite3.connect(ruta) as vieja:
+            vieja.executescript(_ESQUEMA_SIN_RESUMEN)
+            vieja.execute("ALTER TABLE conversaciones ADD COLUMN resumen TEXT NOT NULL DEFAULT ''")
+            vieja.execute(
+                "INSERT INTO conversaciones (id_conversacion, id_prospecto, momento) "
+                "VALUES ('vieja-1', ?, '2026-08-01T10:00:00')",
+                (ID,),
+            )
+            vieja.execute(
+                "INSERT INTO prospectos (id, creado_en, actualizado_en) "
+                "VALUES (?, '2026-08-01T10:00:00', '2026-08-01T10:00:00')",
+                (ID,),
+            )
+
+        almacen = AlmacenProspectos(ruta)
+        almacen.anotar_aviso("vieja-1", "Le aviso que esto se graba")
+        almacen.anotar_consentimiento("vieja-1")
+
+        conversacion = almacen.conversacion("vieja-1")
+        assert conversacion is not None
+        assert conversacion.aviso_texto == "Le aviso que esto se graba"
+        assert conversacion.consentimiento == "conducta_inequivoca"
+
+
+#: La tabla `conversaciones` de una base vieja: sin `resumen` (que aquí se
+#: migra con una entrada simulada) y sin las columnas del consentimiento (que
+#: se migran con las entradas reales de `_COLUMNAS_AÑADIDAS`).
 _ESQUEMA_SIN_RESUMEN = """
 CREATE TABLE conversaciones (
     id_conversacion TEXT PRIMARY KEY,

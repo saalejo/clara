@@ -17,29 +17,41 @@ oficial está marcado.
 El producto ya está publicado en internet y ya trata datos personales, así que
 hay obligaciones que aplican **desde ya**, no desde la primera venta:
 
-1. **[INCUMPLIMIENTO] No hay política de tratamiento de datos publicada** en
-   voz-digital.com. Tenerla y publicarla es obligatorio (Ley 1581/2012
-   art. 25; Decreto 1377/2013 art. 13) y su ausencia es infracción autónoma
-   sancionable — además invalida cualquier autorización «informada» que Clara
-   recoja.
-2. **[INCUMPLIMIENTO] Clara graba y transcribe voz sin anunciarlo ni pedir
-   autorización.** La autorización debe ser previa e informada (arts. 9 y 12
-   Ley 1581); la oral vale, pero hay que conservar la prueba (D. 1377
+1. **[RESUELTO 16-ago-2026] No había política de tratamiento de datos
+   publicada** en voz-digital.com. Tenerla y publicarla es obligatorio (Ley
+   1581/2012 art. 25; Decreto 1377/2013 art. 13) y su ausencia es infracción
+   autónoma sancionable — además invalida cualquier autorización «informada»
+   que Clara recoja. *Resuelto con la página pública `/privacidad` del portal
+   (plantilla `panel/privacidad.html`), enlazada desde el pie del portal y
+   desde la puerta de acceso.*
+2. **[RESUELTO 16-ago-2026] Clara grababa y transcribía voz sin anunciarlo ni
+   pedir autorización.** La autorización debe ser previa e informada (arts. 9
+   y 12 Ley 1581); la oral vale, pero hay que conservar la prueba (D. 1377
    arts. 7-8). La voz es dato biométrico —sensible— en la doctrina de la SIC.
-3. **[INCUMPLIMIENTO] La galleta identificadora de 180 días no se informa.**
-   Una cookie que enlaza al visitante con su nombre, teléfono y
+   *Resuelto: el saludo comercial (`SALUDO_MARKETING`) anuncia que Clara es
+   una IA, que la conversación se graba y se transcribe, y dónde está la
+   política; la prueba queda registrada por conversación en
+   `prospectos.sqlite3` (texto exacto del aviso, momento, y consentimiento por
+   conducta inequívoca cuando el visitante siguió hablando).*
+3. **[RESUELTO 16-ago-2026] La galleta identificadora de 180 días no se
+   informaba.** Una cookie que enlaza al visitante con su nombre, teléfono y
    transcripciones es un mecanismo de recolección de datos personales: exige
    aviso y autorización (doctrina SIC 2016 y Guía de marketing 2019).
-4. **[INCUMPLIMIENTO] El audio y el texto viajan a EE. UU. (Deepgram, Google,
-   Groq) sin contrato de transmisión ni informarlo.** EE. UU. tiene nivel
-   adecuado declarado (Circular SIC 005/2017), así que el envío es viable —
-   pero exige contratos del art. 25 del D. 1377 con cada proveedor y
-   declararlo en la política y el aviso.
-5. **[CORREGIR YA] Clara no siempre se identifica como IA.** Hoy no hay
-   obligación literal de decir «soy un asistente de IA», pero es la lectura
-   conservadora de la transparencia que exige la Circular SIC 002/2024, evita
-   el flanco de práctica engañosa (Ley 1480 arts. 30 y 48) y anticipa el
-   proyecto de ley de IA en trámite, que sí lo ordena.
+   *Resuelto: la portada de la puerta de acceso avisa de la cookie y de la
+   transcripción antes de conectar, y la política la describe.*
+4. **[INCUMPLIMIENTO — papeleo del usuario] El audio y el texto viajan a
+   EE. UU. (Deepgram, Google, Groq) sin contrato de transmisión.** EE. UU.
+   tiene nivel adecuado declarado (Circular SIC 005/2017), así que el envío es
+   viable — la circulación internacional **ya se declara** en la política,
+   pero siguen faltando los contratos/DPA del art. 25 del D. 1377 con cada
+   proveedor, revisados y archivados. No es código: es acción del usuario.
+5. **[RESUELTO 16-ago-2026] Clara no siempre se identificaba como IA.** Hoy no
+   hay obligación literal de decir «soy un asistente de IA», pero es la
+   lectura conservadora de la transparencia que exige la Circular SIC
+   002/2024, evita el flanco de práctica engañosa (Ley 1480 arts. 30 y 48) y
+   anticipa el proyecto de ley de IA en trámite, que sí lo ordena. *Resuelto
+   en el mismo saludo del punto 2 («yo misma soy uno — una inteligencia
+   artificial»).*
 
 La vara sancionatoria es real: multas de hasta 2.000 SMLMV (≈ $3.500 millones
 con el mínimo de 2026) y, para tratamiento no autorizado de datos
@@ -290,26 +302,33 @@ constitución, `[ANTES DE CLÍNICAS]` condiciona la primera venta al sector
 salud, y `[VIGILAR]` es normativa en movimiento.
 
 1. **Redactar y publicar la política de tratamiento de datos y el aviso de
-   privacidad en voz-digital.com** `[INCUMPLIMIENTO]` — con: identidad del
-   responsable, finalidades (atención comercial, memoria de prospectos, mejora
-   del servicio), circulación internacional (EE. UU.: Deepgram, Google, Groq),
-   derechos y canal de contacto, y aviso de la galleta identificadora. Ley
-   1581 art. 25; D. 1377 arts. 13-15.
+   privacidad en voz-digital.com** `[RESUELTO 16-ago-2026]` — con: identidad
+   del responsable, finalidades (atención comercial, memoria de prospectos,
+   mejora del servicio), circulación internacional (EE. UU.: Deepgram, Google,
+   Groq), derechos y canal de contacto, y aviso de la galleta identificadora.
+   Ley 1581 art. 25; D. 1377 arts. 13-15. *Hecho: página `/privacidad` del
+   portal, enlazada desde el pie y desde la puerta de acceso.*
 2. **Añadir el anuncio al saludo de Clara: quién es, que es una IA, que la
-   conversación se graba, y dónde está la política** `[INCUMPLIMIENTO]` —
-   seguir conversando tras el aviso opera como conducta inequívoca (D. 1377
-   art. 7); conservar el audio del momento como prueba (art. 8). Resuelve de
-   un golpe la autorización, la transparencia de la Circular 002/2024 y el
-   flanco de práctica engañosa.
+   conversación se graba, y dónde está la política** `[RESUELTO 16-ago-2026]`
+   — seguir conversando tras el aviso opera como conducta inequívoca (D. 1377
+   art. 7); conservar la prueba (art. 8). Resuelve de un golpe la
+   autorización, la transparencia de la Circular 002/2024 y el flanco de
+   práctica engañosa. *Hecho: `SALUDO_MARKETING` nuevo (migración
+   `0008_saludo_con_aviso` del panel) y registro textual por conversación —
+   texto exacto del aviso, momento y consentimiento— en `prospectos.sqlite3`.
+   Se optó por prueba textual, no por conservar el audio.*
 3. **Dar salida a los derechos del titular: canal de contacto y capacidad de
-   consultar/suprimir una ficha de prospecto** `[INCUMPLIMIENTO]` — correo de
-   contacto en la política + procedimiento interno (el almacén de prospectos
-   ya permite localizar y borrar por id). Ley 1581 art. 8; Circular 002/2024
-   num. VII y X.
+   consultar/suprimir una ficha de prospecto** `[RESUELTO 16-ago-2026]` —
+   correo de contacto en la política + supresión desde el panel
+   (`AlmacenProspectos.borrar`, botón «Suprimir este prospecto» en la ficha,
+   con cascada de conversaciones y briefs). Ley 1581 art. 8; Circular
+   002/2024 num. VII y X.
 4. **Revisar y archivar los términos de datos (DPA) de Deepgram, Google AI
-   Studio y Groq** `[INCUMPLIMIENTO]` — verificar que no entrenen con los
-   datos enviados (o desactivarlo), y que cumplan lo que exige el art. 25 del
-   D. 1377. Documentarlo: la SIC pide responsabilidad «demostrable».
+   Studio y Groq** `[INCUMPLIMIENTO — acción del usuario]` — verificar que no
+   entrenen con los datos enviados (o desactivarlo), y que cumplan lo que
+   exige el art. 25 del D. 1377. Documentarlo: la SIC pide responsabilidad
+   «demostrable». Es papeleo, no código: descargar y archivar los DPA es lo
+   único del bloque urgente que queda pendiente.
 5. **Escribir el estudio de impacto de privacidad del producto**
    `[ANTES DE CLÍNICAS]` — obligado por la Circular 002/2024 cuando hay alto
    riesgo (sensibles + IA): descripción del tratamiento, riesgos, medidas.

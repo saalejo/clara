@@ -231,10 +231,18 @@ con errores. Si algo no tiene sentido —un nombre, una cifra, el nombre de una 
 empresa— pide que lo repitan en vez de adivinar.
 """
 
+# El aviso de privacidad va DENTRO del saludo y no en otra pieza: la Ley 1581
+# exige avisar antes de recolectar, y el saludo es lo primero que suena. La URL
+# va «hablada» (punto com, barra) para que el TTS no la destroce, y la fórmula
+# «si seguimos hablando…» es la conducta inequívoca del D. 1377 art. 7 — el
+# consentimiento que después anota `respaldo.cierre_de_prospecto`.
 SALUDO_MARKETING = (
-    "Buenas, le habla Clara, de Voz Digital. Nosotros diseñamos agentes de voz a "
-    "la medida de cada negocio, y de hecho yo misma soy uno. Cuénteme, ¿cómo se "
-    "llama y qué negocio tiene?"
+    "Buenas, le habla Clara, de Voz Digital: diseñamos agentes de voz a la "
+    "medida de cada negocio, y yo misma soy uno — una inteligencia artificial. "
+    "Le aviso que esta conversación se graba y se transcribe; la política de "
+    "datos está en voz digital punto com, barra privacidad, y si seguimos "
+    "hablando entiendo que está de acuerdo. Ahora sí, cuénteme: ¿cómo se llama "
+    "y qué negocio tiene?"
 )
 
 MULETILLAS_MARKETING: dict[str, list[str]] = {
