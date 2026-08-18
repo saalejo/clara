@@ -38,7 +38,7 @@ Por qué este y no otro:
   llamada real lo descartó: su streaming emite tool-calls fantasma con nombre
   vacío que envenenan el historial y Gemini rechaza después TODA petición
   (error 400), dejando muda a la asistente a mitad de llamada. El SDK nativo
-  no pasa por ese shim. El commit `4794d0f` documenta la depuración.
+  no pasa por ese shim. El commit `cc3c48b` documenta la depuración.
 
 ## 3. Arquitectura y decisiones
 
