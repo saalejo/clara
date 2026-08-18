@@ -1,4 +1,4 @@
-# El túnel de Cloudflare que expone las dos superficies al jurado:
+# El túnel de Cloudflare que expone las dos superficies a internet:
 #   clara.voz-digital.com   -> localhost:7860  (interfaz de llamada)
 #   panel.voz-digital.com -> localhost:8081  (consola de administración)
 #
@@ -12,6 +12,11 @@
 #   cloudflared tunnel route dns clara panel.voz-digital.com
 #   (el ingress va en ~/.cloudflared/config.yml)
 #
+# `tunnel run` va SIN nombre a propósito: el túnel lo elige la clave `tunnel:`
+# de ~/.cloudflared/config.yml, que lleva el UUID. Así la unidad no depende del
+# nombre —que se puede cambiar en el panel de Cloudflare sin tocar el DNS— y
+# cambiar de túnel es editar una línea del config, no reinstalar la unidad.
+#
 # Instalación:
 #   cp deploy/clara-tunel.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now clara-tunel
@@ -21,7 +26,7 @@ After=network-online.target
 
 [Service]
 Type=exec
-ExecStart=%h/.local/bin/cloudflared tunnel run clara
+ExecStart=%h/.local/bin/cloudflared tunnel run
 Restart=on-failure
 RestartSec=5
 

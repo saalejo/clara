@@ -1,6 +1,6 @@
 # Diagramas — arquitectura y flujo de decisión
 
-Entregable 02 del reto. Los dos diagramas corresponden al código de este
+Los dos diagramas corresponden al código de este
 repositorio; cada caja nombra el módulo que la implementa para poder cotejar.
 
 ## Arquitectura
@@ -42,7 +42,7 @@ Puntos que no se ven en la caja pero importan:
   en la telefonía del proyecto base: un procesador de Pipecat pertenece a un
   pipeline y la carga de Piper no puede pagarla el saludo.
 - **El conocimiento vivo no reinicia nada**: el retriever relee la lista de
-  colecciones en cada consulta; reindexar desde el panel basta (compuerta G5).
+  colecciones en cada consulta; reindexar desde el panel basta.
 - **La traza es la fuente de verdad de la trazabilidad**: registra lo que el
   índice devolvió de verdad (documento, tema, distancia), no lo que el modelo
   dice haber consultado.

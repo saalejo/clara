@@ -1,9 +1,9 @@
-"""El registro de métricas que exige el reto: latencia, tokens y consultas.
+"""El registro de métricas del agente: latencia, tokens y consultas.
 
-La rúbrica pide números concretos en el README —latencia P50 y P95 desde que
+El README publica números concretos —latencia P50 y P95 desde que
 el paciente deja de hablar hasta que suena el agente, tokens por turno y por
-llamada, invocaciones del modelo por turno— y avisa de que "reportar números
-que no se sostienen es peor que no reportarlos". La forma de que se sostengan
+llamada, invocaciones del modelo por turno—, y reportar números que no se
+sostienen es peor que no reportarlos. La forma de que se sostengan
 es medirlos donde ocurren y dejarlos en disco: este módulo escribe una línea
 JSON por evento en `data/metricas/<fecha>.jsonl`, y `scripts/metricas.py` los
 agrega a la tabla del README.
@@ -14,7 +14,7 @@ compuerta, por donde ya se sabe que pasan los frames de habla del bot):
 
 * `UserStoppedSpeakingFrame` marca el inicio del silencio del paciente.
 * El primer `BotStartedSpeakingFrame` posterior cierra la medición: esa
-  diferencia es la latencia voz-a-voz percibida, la que pide el reto.
+  diferencia es la latencia voz-a-voz percibida, la que se publica.
 * Los `MetricsFrame` que emiten los servicios (con `enable_metrics=True`)
   traen el TTFB por servicio y el uso de tokens del LLM; se vuelcan tal cual.
 """

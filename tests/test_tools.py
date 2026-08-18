@@ -296,7 +296,7 @@ class TestLaPuertaDeCobertura:
         assert params.resultado["cobertura"] == "no_cubierta"
 
     async def test_un_tema_recien_subido_desbloquea_la_cirugia_sin_reiniciar(self) -> None:
-        """El requisito del jurado: sube un PDF que Clara no ha visto y funciona.
+        """El conocimiento vivo: sube un PDF que Clara no ha visto y funciona.
 
         Como se recuerda el texto crudo del paciente y no el tema ya resuelto,
         basta con que el índice crezca para que la misma cirugía pase de

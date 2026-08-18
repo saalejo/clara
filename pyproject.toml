@@ -21,7 +21,7 @@ dependencies = [
     # ARM) y no cabe cómodamente en los 3.8 GB de RAM de la placa. Ver
     # docs/arquitectura.md para la alternativa usada.
     #   webrtc     -> SmallWebRTCTransport (aiortc), la llamada de voz desde el
-    #                 navegador que exige el reto (compuerta G4). aiortc es wheel
+    #                 navegador, que es la interfaz de llamada. aiortc es wheel
     #                 puro y sus binarios (pylibsrtp, opencv-headless) publican
     #                 wheels aarch64; `av` ya venía por faster-whisper.
     "pipecat-ai[local,silero,whisper,piper,deepgram,mcp,webrtc]==1.6.0",
@@ -45,7 +45,7 @@ dependencies = [
     "fastapi>=0.115,<1",
 
     # UI de navegador lista para SmallWebRTCTransport (micrófono + altavoz).
-    # El diseño visual no puntúa en el reto; el contrato funcional sí.
+    # El diseño visual es lo de menos aquí; el contrato funcional no.
     "pipecat-ai-small-webrtc-prebuilt>=1,<2",
 
     # Base de datos vectorial para el RAG (modo embebido, PersistentClient).
@@ -191,7 +191,7 @@ strict = true
 module = [
     "pyaudio.*", "chromadb.*", "fastembed.*", "pipecat.*", "pypdf.*",
     "faster_whisper.*", "piper.*", "soxr.*",
-    # La interfaz de llamada por navegador (compuerta G4 del reto).
+    # La interfaz de llamada por navegador.
     "aiortc.*", "pipecat_ai_small_webrtc_prebuilt.*",
     # El panel: django-stubs quedaría fuera a propósito (arrastra un plugin de
     # mypy y su propia configuración, y --strict ya es bastante exigente aquí).

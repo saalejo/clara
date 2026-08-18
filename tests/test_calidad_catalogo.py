@@ -93,7 +93,10 @@ def test_round_trip_json_del_resultado() -> None:
 
 def test_round_trip_json_de_la_solicitud_y_el_lote() -> None:
     solicitud = SolicitudCalidad(
-        id_lote="lote-1", momento="2026-08-11T12:00:00", escenarios=["bandera-roja"], autor="jurado"
+        id_lote="lote-1",
+        momento="2026-08-11T12:00:00",
+        escenarios=["bandera-roja"],
+        autor="operador",
     )
     assert SolicitudCalidad.model_validate_json(solicitud.model_dump_json()) == solicitud
 

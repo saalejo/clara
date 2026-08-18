@@ -1,6 +1,6 @@
 """El contrato de las evaluaciones clínicas: triaje, alertas y resúmenes.
 
-El reto pide dos cosas que tienen que sobrevivir a la llamada: una **alerta
+El seguimiento pide dos cosas que tienen que sobrevivir a la llamada: una **alerta
 persistida y estructurada** cuando el agente decide escalar, y un **resumen de
 llamada** con cinco campos concretos (paciente y procedimiento, síntomas,
 decisión, referencias y próximos pasos). Este módulo define esos modelos y
@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 
 class NivelAlerta(StrEnum):
-    """Nivel de criticidad del triaje, el vocabulario del dataset del reto.
+    """Nivel de criticidad del triaje, el vocabulario del dataset clínico.
 
     Attributes:
         VERDE: Evolución normal. Se maneja con indicaciones de autocuidado y
@@ -69,8 +69,8 @@ class Alerta(BaseModel):
 class ResumenLlamada(BaseModel):
     """El resumen estructurado que queda al terminar una llamada.
 
-    Los cinco primeros campos son exactamente los que la rúbrica del reto
-    exige; `documentos_consultados` es la traza real de la llamada —qué
+    Los cinco primeros campos son exactamente los que el seguimiento
+    clínico exige; `documentos_consultados` es la traza real de la llamada —qué
     documentos respaldaron las respuestas—, que se adjunta desde el registro
     del RAG y no de la memoria del modelo.
     """

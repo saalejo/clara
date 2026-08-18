@@ -1,7 +1,7 @@
 """El historial de pacientes: la memoria entre llamadas, por número de teléfono.
 
 Las evaluaciones (`evaluaciones.py`) dejan alertas y resúmenes como ficheros
-JSON indexados por `id_llamada`, y eso responde a la rúbrica del reto pero no
+JSON indexados por `id_llamada`, y eso responde a la trazabilidad pero no
 a la pregunta que importa al descolgar: **¿este número ya llamó antes, y qué
 pasó?**. Este módulo la responde con una base SQLite en el volumen de datos:
 el agente registra cada llamada identificada al montarla y le va anotando el

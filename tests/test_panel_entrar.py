@@ -30,13 +30,13 @@ def _cubo_limpio() -> Iterator[None]:
 
 @pytest.fixture
 def usuario() -> User:
-    return User.objects.create_user(username="jurado", password=CLAVE)
+    return User.objects.create_user(username="operador", password=CLAVE)
 
 
 def _fallar(cliente: Client, ip: str = "1.1.1.1") -> int:
     respuesta = cliente.post(
         reverse("login"),
-        {"username": "jurado", "password": "no-es"},
+        {"username": "operador", "password": "no-es"},
         headers={"cf-connecting-ip": ip},
     )
     return int(respuesta.status_code)
@@ -51,7 +51,7 @@ def test_la_pagina_de_entrar_sigue_siendo_publica(client: Client) -> None:
 
 
 def test_la_contraseña_correcta_entra(client: Client, usuario: User) -> None:
-    respuesta = client.post(reverse("login"), {"username": "jurado", "password": CLAVE})
+    respuesta = client.post(reverse("login"), {"username": "operador", "password": CLAVE})
     assert respuesta.status_code == 302
     assert respuesta.url == "/panel/"
 
@@ -67,7 +67,7 @@ def test_durante_el_bloqueo_no_entra_ni_la_contraseña_buena(client: Client, usu
         _fallar(client)
     respuesta = client.post(
         reverse("login"),
-        {"username": "jurado", "password": CLAVE},
+        {"username": "operador", "password": CLAVE},
         headers={"cf-connecting-ip": "1.1.1.1"},
     )
     assert respuesta.status_code == 429
@@ -79,7 +79,7 @@ def test_el_aviso_dice_cuánto_falta(client: Client, usuario: User) -> None:
         _fallar(client)
     respuesta = client.post(
         reverse("login"),
-        {"username": "jurado", "password": "no-es"},
+        {"username": "operador", "password": "no-es"},
         headers={"cf-connecting-ip": "1.1.1.1"},
     )
     assert "Demasiados intentos" in respuesta.content.decode()
@@ -91,7 +91,7 @@ def test_acertar_limpia_el_cubo(client: Client, usuario: User) -> None:
         _fallar(client)
     client.post(
         reverse("login"),
-        {"username": "jurado", "password": CLAVE},
+        {"username": "operador", "password": CLAVE},
         headers={"cf-connecting-ip": "1.1.1.1"},
     )
     for _ in range(5):

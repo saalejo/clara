@@ -1,6 +1,6 @@
 """El contrato de las pruebas de calidad adversarias: escenarios y resultados.
 
-La evaluación del reto es una sesión **en vivo** en la que los jueces atacan al
+La evaluación de verdad es una sesión **en vivo** en la que personas atacan al
 agente —le dicen que olvide sus instrucciones, se enfadan, le piden datos de
 otros pacientes, describen una bandera roja a ver si la escala—. Este módulo
 define el catálogo de esos ataques y la forma de sus resultados, para poder

@@ -282,7 +282,7 @@ class ServiciosWeb:
                 self._banco = banco
             # El RAG se abre una vez y se comparte: es de solo lectura y la
             # lista de colecciones se relee en cada consulta, así que un
-            # reindexado desde el panel se ve sin reiniciar (compuerta G5).
+            # reindexado desde el panel se ve sin reiniciar.
             if self._recursos is None:
                 try:
                     self._recursos = AppResources(
@@ -501,7 +501,7 @@ async def _conversar(
         worker = PipelineWorker(
             pipeline,
             # Antes era None ("colgar es la única forma normal de terminar; el
-            # jurado puede quedarse callado pensando"). Ya no: una pestaña
+            # paciente puede quedarse callado pensando"). Ya no: una pestaña
             # abierta y olvidada mantiene viva la conexión de streaming con
             # Deepgram, que se factura por tiempo conectado y tiene cuota
             # gratuita. Cinco minutos de silencio absoluto son de sobra para

@@ -147,9 +147,8 @@ tests/                    ~1500 tests; make lint && make test
 ```
 
 El proyecto nació como un agente de voz doméstico para NanoPi del mismo autor,
-creció como agente clínico de seguimiento postoperatorio (finalista del reto
-Clara 2026) y hoy es la plataforma sobre la que Voz Digital construye
-agentes a medida.
+creció como agente clínico de seguimiento postoperatorio y hoy es la
+plataforma sobre la que Voz Digital construye agentes a medida.
 
 ## Licencia
 

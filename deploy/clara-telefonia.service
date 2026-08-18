@@ -1,4 +1,4 @@
-# El puente de telefonía Bluetooth (HFP) para la copia del reto, en NATIVO.
+# El puente de telefonía Bluetooth (HFP) para esta copia, en NATIVO.
 #
 # Es el mismo puente del proyecto base, apuntando al checkout de clara:
 # el socket unix se deriva de DATA_DIR (aquí, ~/clara/data/run/), así que

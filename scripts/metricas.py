@@ -7,7 +7,7 @@ sitio sin el entorno del agente, incluso sobre una copia de los ficheros.
 
 Los precios para el coste extrapolado se declaran aquí arriba, con fecha, para
 que el cálculo sea auditable. En el nivel gratuito de AI Studio el coste real
-es cero; el reto pide extrapolar a precios de producción y explicar la cuenta.
+es cero; por eso se extrapola a precios de producción y se explica la cuenta.
 """
 
 from __future__ import annotations

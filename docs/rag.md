@@ -317,9 +317,9 @@ Unos 2,4 MB por tema. Casi todo lo que se ve ahí es el modelo de embeddings, qu
 se carga una sola vez y no depende del número de colecciones. Con dos docenas de
 temas el coste sigue siendo despreciable frente a los 2 GB del agente.
 
-## Calibración para el corpus clínico del reto (agosto de 2026)
+## Calibración para el corpus clínico (agosto de 2026)
 
-El corpus del reto mezcla español e inglés y las preguntas llegan en español,
+El corpus clínico mezcla español e inglés y las preguntas llegan en español,
 así que el umbral se recalibró con sondas reales sobre los 10 157 fragmentos
 indexados (`RAG_MAX_DISTANCE=1.5` temporal para ver las distancias crudas):
 

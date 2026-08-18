@@ -187,10 +187,10 @@ def build_stt(settings: Settings, *, sample_rate: int | None = None) -> STTServi
 
 
 def build_llm(settings: Settings) -> LLMService[Any]:
-    """Construye el servicio de LLM según el backend permitido por el reto.
+    """Construye el servicio de LLM según el backend configurado.
 
-    El modelo está restringido por la compuerta G3: Gemini Flash (nivel
-    gratuito de AI Studio) o Llama vía Groq (nivel gratuito).
+    Solo hay dos cableados: Gemini Flash (nivel gratuito de AI Studio) o
+    Llama vía Groq (nivel gratuito).
 
     Gemini va por su SDK nativo (`GoogleLLMService`), no por el endpoint
     OpenAI-compatible de AI Studio. No es una preferencia estética: el shim

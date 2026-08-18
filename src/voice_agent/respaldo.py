@@ -1,6 +1,6 @@
 """El resumen de respaldo: lo que queda cuando la llamada muere sin despedida.
 
-Los pacientes (y los jueces) cuelgan sin avisar, una llamada telefónica puede
+Los pacientes cuelgan sin avisar, una llamada telefónica puede
 caerse por cobertura, y "qué queda al terminar la llamada" no puede depender
 de que al modelo le dé tiempo a llamar a `finalizar_llamada`. Este respaldo no
 redacta nada: deja los hechos que el sistema ya tiene —la última alerta, la

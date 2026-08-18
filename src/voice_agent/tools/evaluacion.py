@@ -1,11 +1,11 @@
 """Las herramientas del seguimiento clínico: escalar y cerrar la llamada.
 
-Son el corazón de la lógica de decisión del reto. `registrar_alerta` persiste
+Son el corazón de la lógica de decisión del agente. `registrar_alerta` persiste
 la decisión de triaje **en el momento en que se toma** —una llamada que se cae
 después de detectar una bandera roja tiene que dejar la alerta ya en disco— y
 devuelve al modelo la instrucción exacta de qué comunicarle al paciente.
-`finalizar_llamada` persiste el resumen estructurado con los cinco campos que
-exige la rúbrica, fusionando las referencias que cita el modelo con la traza
+`finalizar_llamada` persiste el resumen estructurado con los cinco campos del
+contrato, fusionando las referencias que cita el modelo con la traza
 real del RAG.
 
 Como todas las herramientas, los docstrings son el esquema que ve el modelo:

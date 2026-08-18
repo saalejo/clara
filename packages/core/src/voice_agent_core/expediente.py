@@ -195,7 +195,7 @@ class CriteriosExpedientes(BaseModel):
 
         Un filtro que no se entiende se ignora y se avisa: la página tiene que
         salir igual. Devolver un 400 por un `nivel=azul` escrito a mano en la
-        URL dejaría al jurado delante de una pantalla de error de Django.
+        URL dejaría a quien mira el panel delante de un error de Django.
 
         Returns:
             Los criterios y la lista de avisos que hay que enseñar.

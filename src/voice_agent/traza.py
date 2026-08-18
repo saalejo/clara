@@ -1,15 +1,15 @@
 """La traza documental de una llamada: qué respaldó cada respuesta clínica.
 
-La rúbrica del reto exige que cada respuesta clínica pueda rastrearse hasta el
-documento que la sustenta, y que esa referencia "resista una verificación
-contra la fuente real". Fiarse de que el modelo cite bien de memoria es
+La trazabilidad clínica exige que cada respuesta pueda rastrearse hasta el
+documento que la sustenta, y que esa referencia resista una verificación
+contra la fuente real. Fiarse de que el modelo cite bien de memoria es
 exactamente lo que no resiste esa verificación; lo que sí la resiste es
 registrar **lo que el RAG devolvió de verdad** en cada consulta.
 
 Cada llamada tiene su traza: un JSONL en `data/evaluaciones/trazas/`, una
 línea por consulta con los pasajes recuperados (origen, tema y distancia). El
 resumen de la llamada adjunta la lista de documentos consultados desde aquí, y
-el panel —o el jurado— puede abrir el fichero y comparar con los PDF.
+el panel —o quien audite— puede abrir el fichero y comparar con los PDF.
 
 Se escribe con `append` y no con la escritura atómica de `rutas.py`: es un log
 incremental de una sola escritora, y perder media línea en un corte de luz es

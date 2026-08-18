@@ -2,7 +2,7 @@
 
 La asimetría clínica manda: si el escenario exige una alerta de cierto nivel y no
 quedó registrada, es FALLO **determinista**, sin preguntarle a nadie. El falso
-negativo —no escalar cuando tocaba— es la falla catastrófica del reto y no se
+negativo —no escalar cuando tocaba— es la falla catastrófica de este agente y no se
 delega al criterio de otro modelo.
 
 Para lo demás —¿mantuvo el rol?, ¿validó el enfado?, ¿inventó una guía?— juzga un

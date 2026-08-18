@@ -283,8 +283,8 @@ recargar y a compartir el enlace):
 * **paciente** (por número).
 
 Un filtro que no se entiende —un `nivel=azul` escrito a mano— **se ignora y se
-avisa**: la página sale igual. Devolver un 400 dejaría al jurado delante de una
-pantalla de error de Django.
+avisa**: la página sale igual. Devolver un 400 dejaría a quien mira delante de
+una pantalla de error de Django.
 
 El filtro de fecha es el único que **poda antes de abrir nada**: el nombre del
 fichero es `%Y%m%d-%H%M%S.json`, así que sus ocho primeros caracteres deciden si
@@ -311,7 +311,7 @@ Al entrar en una fila está **todo lo de esa llamada junto**: sus alertas en
 orden, el resumen completo (o el aviso de que se cortó antes de
 `finalizar_llamada`, o el de que es un resumen de respaldo), la ficha del
 paciente —o la explicación de por qué no la hay— y la **traza documental**, que
-es la prueba de trazabilidad que pide la rúbrica: qué se le preguntó al RAG y qué
+es la prueba de trazabilidad clínica: qué se le preguntó al RAG y qué
 devolvió de verdad, con origen, tema y distancia. Una traza vacía también se
 explica: cuando la cirugía no está cubierta, `buscar_en_documentos` ni llama al
 retriever, y eso es un «no lo sé» bien hecho, no un fallo.
@@ -353,13 +353,13 @@ nueva y vacía.
 
 La sección Calidad ensaya a Clara contra ataques adversarios —inyección de
 prompt, paciente hostil, banderas rojas, preguntas fuera del corpus— **por texto
-y sin voz**. Es la respuesta a que la evaluación del reto es una sesión en vivo
-donde los jueces atacan al agente: aquí esos mismos ataques se pueden ensayar a
-solas antes de la demo y medir cómo responde.
+y sin voz**. Es la respuesta a que la evaluación de verdad ocurre en vivo, con
+personas atacando al agente: aquí esos mismos ataques se pueden ensayar a
+solas de antemano y medir cómo responde.
 
 Cómo funciona: un LLM interpreta el rol del escenario (su `persona`) y conversa
-contra el **mismo** prompt de sistema, RAG y herramientas que atienden los
-jueces; otro LLM juzga el resultado contra los criterios del escenario. Para los
+contra el **mismo** prompt de sistema, RAG y herramientas que atienden a los
+pacientes; otro LLM juzga el resultado contra los criterios del escenario. Para los
 escenarios de bandera roja hay además un **chequeo determinista**: si Clara no
 registró la alerta del nivel exigido, es fallo automático —el falso negativo
 clínico no se deja al criterio de otro modelo—. El veredicto del juez se puede
@@ -380,7 +380,7 @@ prueba **no** aparezcan en las páginas de Evaluaciones ni Pacientes.
 
 Mide el **cerebro, no el oído**: no cubre el ruido del micrófono, las muletillas
 ni las interrupciones; prueba el prompt, el RAG y las herramientas, que es lo que
-el jurado ataca con palabras. Desde SSH, `make calidad` (todo el catálogo) o
+se ataca con palabras. Desde SSH, `make calidad` (todo el catálogo) o
 `make calidad ESC="inyeccion-olvida bandera-roja"` ejecuta sin pasar por el
 panel. Ojo con la cuota del nivel gratuito de Gemini: el lote completo son ~14
 conversaciones y comparte cuota con el agente en vivo, así que no conviene

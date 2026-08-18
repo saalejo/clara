@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def identificado(client: Client) -> Client:
-    client.force_login(User.objects.create_user(username="jurado", password="una-clave-larga"))
+    client.force_login(User.objects.create_user(username="operador", password="una-clave-larga"))
     return client
 
 

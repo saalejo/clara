@@ -11,7 +11,7 @@ una API.
 |---|---|---|
 | `buscar_en_documentos` | Consulta la base de conocimiento (RAG) | Le da al agente conocimiento propio y actualizable sin reentrenar nada |
 | `registrar_alerta` | Persiste el triaje (verde/amarillo/rojo) en cuanto se decide | El falso negativo es la falla catastrófica: la alerta no puede esperar al final de la llamada |
-| `finalizar_llamada` | Guarda el resumen estructurado de la llamada | Los cinco campos de la rúbrica, más el color del triaje que copia el sistema de la alerta |
+| `finalizar_llamada` | Guarda el resumen estructurado de la llamada | Los cinco campos del contrato, más el color del triaje que copia el sistema de la alerta |
 | `historial_paciente` | Consulta las llamadas anteriores del número en curso | La memoria entre llamadas: quién llamó, qué triaje se decidió y qué quedó pendiente |
 | `guardar_respuestas` | Persiste las respuestas de un cuestionario de misión | Las tareas programadas tipo cuestionario necesitan dejar constancia |
 | `obtener_fecha_hora` | Devuelve la fecha y hora actuales | Un LLM no tiene reloj; si le preguntas la hora, se la inventa |

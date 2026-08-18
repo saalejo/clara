@@ -2,7 +2,7 @@
 #
 # El panel no ejecuta comandos: arranca esta unidad oneshot por D-Bus (ver
 # packages/panel/src/voice_agent_panel/control.py) y sigue su estado. Sin esta
-# unidad instalada, el conocimiento vivo (compuerta G5) muere en el botón.
+# unidad instalada, el conocimiento vivo muere en el botón.
 #
 # Instalación:
 #   cp deploy/clara-ingest.service ~/.config/systemd/user/

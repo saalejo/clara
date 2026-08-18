@@ -1,7 +1,7 @@
 # Informe final — Clara, agente de voz de seguimiento postoperatorio
 
-Entregable 03 del reto Clara 2026. **[BORRADOR — revisar y firmar por el
-autor antes de entregar.]**
+Informe técnico del proyecto, agosto de 2026. **[BORRADOR — revisar antes de
+publicar.]**
 
 ## 1. Qué se construyó
 
@@ -14,12 +14,12 @@ trazable de cada llamada. Todo corre en una NanoPi R4S (4 GB de RAM, ARM,
 sin GPU) expuesta por un túnel de Cloudflare; el coste de modelo por llamada
 es $0 en niveles gratuitos.
 
-## 2. Declaración del modelo (compuerta G3)
+## 2. El modelo de lenguaje
 
 **Modelo usado: `gemini-2.5-flash` (familia Google Gemini, gama Flash), en el
 nivel gratuito de Google AI Studio, mediante el SDK nativo `google-genai`.**
 
-Por qué este y no otro de los permitidos:
+Por qué este y no otro:
 
 - **Latencia del primer token.** En un agente de voz, el tiempo hasta el
   primer token ES la conversación. Medido desde la placa: mediana de 0,63 s
@@ -30,9 +30,9 @@ Por qué este y no otro de los permitidos:
   alerta, resumen); Gemini las invoca con fiabilidad y con argumentos bien
   formados en español.
 - **Plan B declarado y conmutable.** `LLM_BACKEND=groq` cambia a Llama 3.3
-  70B servido por Groq (también permitido, nivel gratuito) sin tocar código,
+  70B servido por Groq (también en nivel gratuito) sin tocar código,
   por si el límite de peticiones por minuto del nivel gratuito de Gemini se
-  quedara corto en la sesión en vivo.
+  quedara corto en una sesión en vivo.
 - **Decisión técnica relevante durante el desarrollo**: empezamos usando el
   endpoint *OpenAI-compatible* de AI Studio (cero dependencias nuevas) y una
   llamada real lo descartó: su streaming emite tool-calls fantasma con nombre
@@ -43,12 +43,12 @@ Por qué este y no otro de los permitidos:
 ## 3. Arquitectura y decisiones
 
 Diagramas en [`docs/diagramas.md`](diagramas.md). Stack: Pipecat 1.6
-(orquestación), WebRTC vía aiortc con UI precompilada (G4), Deepgram nova-3
+(orquestación), WebRTC vía aiortc con UI precompilada, Deepgram nova-3
 para STT en español (0 % WER medido en pruebas propias contra 33 % del
 Whisper local viable en esta placa), Piper para TTS local, ChromaDB embebido
 + fastembed (embeddings multilingües, porque el corpus mezcla español e
 inglés y las preguntas llegan en español), consola Django para el
-conocimiento vivo (G5).
+conocimiento vivo.
 
 Decisiones con su porqué, todas verificables en el código:
 
@@ -64,8 +64,8 @@ Decisiones con su porqué, todas verificables en el código:
 3. **La alerta se persiste al decidir, no al colgar** (asimetría clínica: el
    falso negativo es la falla catastrófica; una llamada que se cae tras
    detectar una bandera roja tiene que dejar la alerta ya en disco).
-4. **Resumen de respaldo**: si el paciente cuelga sin despedirse (pasa, y los
-   evaluadores también cuelgan), el pipeline persiste un resumen con la
+4. **Resumen de respaldo**: si el paciente cuelga sin despedirse —que pasa a
+   menudo—, el pipeline persiste un resumen con la
    última alerta, los documentos consultados y la transcripción completa.
 5. **Trazabilidad que resiste verificación**: cada consulta al RAG queda en
    un JSONL por llamada con lo que el índice devolvió de verdad; el campo
@@ -91,7 +91,8 @@ autor). El historial de commits del repositorio es el registro fiel del
 proceso: cada commit explica qué se cambió y por qué, incluidas las
 depuraciones con llamadas reales que tumbaron dos hipótesis (el endpoint
 OpenAI-compatible, el umbral RAG heredado) y los defectos que las pruebas
-adversariales propias destaparon antes que el jurado (atribución a guías
+adversariales propias destaparon antes de que llegaran a un paciente
+(atribución a guías
 inexistentes, invención del nombre de una clínica, sesiones zombi al recargar
 la pestaña, resumen perdido al colgar sin despedida).
 
@@ -121,9 +122,9 @@ Las del README (sección homónima): reindexado ~5 min, un PDF escaneado sin
 capa de texto excluido, límites del nivel gratuito con plan B documentado,
 voz es-ES (no hay voz colombiana comparable en Piper).
 
-## 8. Respuestas base para el video
+## 8. Notas de presentación
 
-**Pregunta 1 (valor).** El seguimiento postoperatorio hoy depende de
+**El valor.** El seguimiento postoperatorio hoy depende de
 llamadas humanas caras que no escalan, y la ventana de las primeras 72 horas
 es donde una complicación detectada a tiempo cambia el desenlace. Clara hace
 la llamada, entiende al paciente en su propio lenguaje, se apoya en los
@@ -135,7 +136,7 @@ rastreable hasta el documento que la sustenta, y el sistema está diseñado
 para la asimetría clínica (ante la duda, escala). Y corre entera en un
 ordenador de 60 dólares con coste de modelo cero.
 
-**Pregunta 2 (decisión técnica).** La más relevante: cómo anclar las
+**La decisión técnica más relevante.** Cómo anclar las
 respuestas clínicas. Evaluamos (a) confiar en las citas del modelo
 —descartado: en una prueba real citó "las guías de cataratas" que no
 existían—; (b) subir el umbral de similitud —descartado: las sondas midieron
